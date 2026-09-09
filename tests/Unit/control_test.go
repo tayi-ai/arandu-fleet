@@ -116,7 +116,7 @@ func (f *fakeWorker) Cancel(_ context.Context, n cluster.Node, job cluster.Job) 
 }
 
 func operator() security.Subject {
-	return security.Subject{ID: "paulo", Tenant: "tayi", Actions: []security.Action{cluster.ClusterView, cluster.ClusterDispatch}}
+	return security.Subject{ID: "paulo", Tenant: "tayi", Actions: []security.Action{cluster.FleetView, cluster.FleetDispatch}}
 }
 
 func TestStatusReadsEveryNodeOfTheRoleWithoutTakingTheQueue(t *testing.T) {
@@ -145,12 +145,12 @@ func TestDispatchIsRefusedWithoutTheAction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	viewer := security.Subject{ID: "viewer", Tenant: "tayi", Actions: []security.Action{cluster.ClusterView}}
+	viewer := security.Subject{ID: "viewer", Tenant: "tayi", Actions: []security.Action{cluster.FleetView}}
 	if _, err := cp.Dispatch(context.Background(), viewer, cluster.ActionDiagnostics, "all"); err == nil {
-		t.Fatal("a subject without cluster.dispatch occupied the fleet")
+		t.Fatal("a subject without fleet.dispatch occupied the fleet")
 	}
 	if _, err := cp.Status(context.Background(), security.Subject{ID: "nobody", Tenant: "tayi"}, "all"); err == nil {
-		t.Fatal("a subject without cluster.view read the fleet")
+		t.Fatal("a subject without fleet.view read the fleet")
 	}
 }
 

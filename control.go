@@ -13,15 +13,15 @@ import (
 
 // The actions of the control plane.
 const (
-	// ClusterView is reading the inventory and the status of the nodes.
-	ClusterView security.Action = "cluster.view"
-	// ClusterDispatch is starting or cancelling a run on the fleet.
-	ClusterDispatch security.Action = "cluster.dispatch"
+	// FleetView is reading the inventory and the status of the nodes.
+	FleetView security.Action = "fleet.view"
+	// FleetDispatch is starting or cancelling a run on the fleet.
+	FleetDispatch security.Action = "fleet.dispatch"
 )
 
 // ControlActions are the actions a group may carry, sorted.
 func ControlActions() []security.Action {
-	return []security.Action{ClusterDispatch, ClusterView}
+	return []security.Action{FleetDispatch, FleetView}
 }
 
 // Run is one dispatch to the fleet: a run id, an action, the nodes it went to
@@ -51,7 +51,7 @@ var _ security.Policy[Run] = ControlPolicy{}
 // Can decides whether the subject may perform the action on the run.
 func (ControlPolicy) Can(_ context.Context, s security.Subject, a security.Action, _ Run) error {
 	switch a {
-	case ClusterView, ClusterDispatch:
+	case FleetView, FleetDispatch:
 		if s.Can(a) {
 			return nil
 		}
@@ -98,10 +98,10 @@ func (c *ControlPlane) Plan() (TrainingPlan, error) { return Plan(c.nodes) }
 // Status reads every node of the role, in parallel, and returns what each
 // answered. Reading never occupies a card and never needs the queue.
 func (c *ControlPlane) Status(ctx context.Context, actor security.Subject, role string) (Run, error) {
-	if _, err := security.Authorize(ctx, c.policy, actor, ClusterView, Run{}); err != nil {
+	if _, err := security.Authorize(ctx, c.policy, actor, FleetView, Run{}); err != nil {
 		return Run{}, err
 	}
-	selected, err := c.select(role)
+	selected, err := c.selectNodes(role)
 	if err != nil {
 		return Run{}, err
 	}
@@ -124,10 +124,10 @@ func (c *ControlPlane) Dispatch(ctx context.Context, actor security.Subject, act
 	if action == ActionCollective {
 		role = RoleTrain
 	}
-	if _, err := security.Authorize(ctx, c.policy, actor, ClusterDispatch, Run{Action: action, Role: role}); err != nil {
+	if _, err := security.Authorize(ctx, c.policy, actor, FleetDispatch, Run{Action: action, Role: role}); err != nil {
 		return Run{}, err
 	}
-	selected, err := c.select(role)
+	selected, err := c.selectNodes(role)
 	if err != nil {
 		return Run{}, err
 	}
@@ -177,7 +177,7 @@ func (c *ControlPlane) InFlight() (Run, bool) {
 	return *c.active, true
 }
 
-func (c *ControlPlane) select(role string) ([]Node, error) {
+func (c *ControlPlane) selectNodes(role string) ([]Node, error) {
 	if role != "all" && !roles[role] {
 		return nil, fmt.Errorf("cluster: role must be all, train, rollout or eval, not %q", role)
 	}
