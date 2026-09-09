@@ -1,10 +1,10 @@
 ---
-name: cluster-package
-description: Install, wire and use the Arandu Cluster package (Go, Arandu) in an application. Use when the request is to "install Arandu Cluster", "add cluster to the app", "go get github.com/tayi-ai/arandu-fleet", "wire it into bootstrap/app.go", "register the module", "use the cluster routes", "everything under /cluster returns 403", "403 forbidden from cluster", "the table does not exist", "no such table", "change where it is mounted", "let admins read it", or when a project's go.mod already requires github.com/tayi-ai/arandu-fleet. Covers the three lines of wiring and where each one goes, the Config fields and which one is required, the routes and their names, why the policy refuses everything until somebody opens it, and the migration step that is not optional.
+name: fleet-package
+description: Install, wire and use the Arandu Fleet package (Go, Arandu) in an application. Use when the request is to "install Arandu Fleet", "add fleet to the app", "go get github.com/tayi-ai/arandu-fleet", "wire it into bootstrap/app.go", "register the module", "use the fleet routes", "everything under /fleet returns 403", "403 forbidden from fleet", "the table does not exist", "no such table", "change where it is mounted", "let admins read it", or when a project's go.mod already requires github.com/tayi-ai/arandu-fleet. Covers the three lines of wiring and where each one goes, the Config fields and which one is required, the routes and their names, why the policy refuses everything until somebody opens it, and the migration step that is not optional.
 license: MIT
 ---
 
-# Using Arandu Cluster
+# Using Arandu Fleet
 
 An Arandu package with one entity, its own table, its own routes and its own
 policy. It is registered by hand — there is no service provider, no container
@@ -26,7 +26,7 @@ The import, with the other module imports:
 
 ```go
 import (
-	cluster "github.com/tayi-ai/arandu-fleet"
+	fleet "github.com/tayi-ai/arandu-fleet"
 )
 ```
 
@@ -34,7 +34,7 @@ The construction, in `Build`, after the session store exists and before
 `k.Register`:
 
 ```go
-	clusterModule, err := cluster.New(cluster.Config{
+	fleetModule, err := fleet.New(fleet.Config{
 		Tenant: cfg.Auth.Tenant,
 	}, db, sessions)
 	if err != nil {
@@ -45,7 +45,7 @@ The construction, in `Build`, after the session store exists and before
 And the registration, inside the `k.Register(...)` call already there:
 
 ```go
-		clusterModule,
+		fleetModule,
 ```
 
 `New` returns an error rather than starting half-wired. It refuses a
@@ -74,7 +74,7 @@ route that authorized correctly. The migration has not run.
 | field | required | meaning |
 | --- | --- | --- |
 | `Tenant` | yes | the customer a visitor with no session is read as. From the application's configuration, never from the request |
-| `Prefix` | no | where the routes are mounted. Defaults to `/cluster` |
+| `Prefix` | no | where the routes are mounted. Defaults to `/fleet` |
 | `PageSize` | no | how many records one page answers with. Defaults to 25, refused above 200 |
 
 `Tenant` is the one place a tenant does not come from a `Grant`, and it is
@@ -91,15 +91,15 @@ wrote and did not get is worse than a number somebody wrote and was told about.
 
 | method | path | name |
 | --- | --- | --- |
-| `GET` | `/cluster` | `cluster.index` |
-| `GET` | `/cluster/{id}` | `cluster.show` |
-| `POST` | `/cluster` | `cluster.store` |
+| `GET` | `/fleet` | `fleet.index` |
+| `GET` | `/fleet/{id}` | `fleet.show` |
+| `POST` | `/fleet` | `fleet.store` |
 
 Build URLs from the names, never by writing the path a second time. `aru
 route:list` shows them grouped by module. Under a custom `Prefix` the paths move
 and the names do not.
 
-`GET /cluster` answers `{"data": {"items": [...]}}`, and adds
+`GET /fleet` answers `{"data": {"items": [...]}}`, and adds
 `"next_cursor"` beside `data` when a further page exists. Pass it back as
 `?cursor=`. A page shorter than `PageSize` is the last one and carries no
 cursor.
@@ -110,7 +110,7 @@ identifier and the response is a declared list of fields rather than the entity.
 ## Every route refuses everybody, until you open the policy
 
 This is the state the package ships in, and it is not a bug to work around.
-`ClusterPolicy` denies every action and has no branch that allows one:
+`FleetRecordPolicy` denies every action and has no branch that allows one:
 
 ```
 403 forbidden
@@ -124,15 +124,15 @@ Opening an action means writing the rule that opens it, in the package's
 
 ```go
 	// arandu:begin custom
-	if a == ClusterView && (s.ID == record.ID || s.HasRole("admin")) {
+	if a == FleetRecordView && (s.ID == record.ID || s.HasRole("admin")) {
 		return nil
 	}
 	// arandu:end custom
 ```
 
 What is not written there stays closed, including every action added later.
-There are five actions — `ClusterView`, `ClusterList`, `ClusterCreate`,
-`ClusterUpdate`, `ClusterDelete` — and opening one opens exactly one.
+There are five actions — `FleetRecordView`, `FleetRecordList`, `FleetRecordCreate`,
+`FleetRecordUpdate`, `FleetRecordDelete` — and opening one opens exactly one.
 
 **Do not open it from the application.** There is no hook, no override and no
 config flag for the policy, and adding one would be a second place where

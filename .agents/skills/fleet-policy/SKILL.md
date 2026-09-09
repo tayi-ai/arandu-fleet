@@ -1,5 +1,5 @@
 ---
-name: cluster-policy
+name: fleet-policy
 description: Decide who may do what in this Arandu package, and open an action that is currently closed. Use when the request is to "open the policy", "let admins read this", "allow the owner to edit", "add an action", "add a permission", "everything returns 403", "the tests say ErrForbidden", "add a Model-backed service method", "why does Find authorize twice", "filter the listing by owner", or when a change touches policy.go or service.go. Covers the Grant, authorization before the Model, the custom block that survives regeneration, why the tenant is never read from the request, and the three shapes that look like authorization and are not.
 license: MIT
 ---
@@ -19,7 +19,7 @@ Four things happen, in this order, and each one is a different file.
 2. `service.go` calls `security.Authorize(ctx, s.policy, actor, ACTION, record)`.
 3. `policy.go` `Can` returns nil, or the reason it will not.
 4. Only then does a `security.Grant` exist, and `service.go` reaches
-   `Clusters(s.db)` and a Model terminal with it.
+   `Fleets(s.db)` and a Model terminal with it.
 
 The Grant is the mechanism, and it is worth knowing exactly how much it
 guarantees. `Authorize` is the only function in the framework that returns a
@@ -34,7 +34,7 @@ here reports it either. Do not reach for it in this package.
 
 The Model requires a Grant and applies its tenant, but it does not decide which
 Policy action that Grant represents. `security.Authorize` before the first
-`Clusters(s.db)` call is therefore mandatory even though the terminal itself
+`Fleets(s.db)` call is therefore mandatory even though the terminal itself
 also takes `g`.
 
 ## The procedure
@@ -45,7 +45,7 @@ also takes `g`.
 
 ```go
 	// arandu:begin custom
-	if a == ClusterView && (s.ID == record.ID || s.HasRole("admin")) {
+	if a == FleetRecordView && (s.ID == record.ID || s.HasRole("admin")) {
 		return nil
 	}
 	// arandu:end custom
@@ -74,7 +74,7 @@ a guest is refused until somebody writes a rule for one.
 
 ```go
 	if record.ID != "" && record.TenantID != s.Tenant {
-		return fmt.Errorf("cluster belongs to another tenant")
+		return fmt.Errorf("fleet belongs to another tenant")
 	}
 ```
 
@@ -106,8 +106,8 @@ allowed, which is still refused — rather than removing the action from
 
 ## Adding a Model-backed service method
 
-`ClusterService` owns `db *data.DB`. Validate first, build the value the Policy
-must see, call `security.Authorize`, and only then call `Clusters(s.db)`.
+`FleetService` owns `db *data.DB`. Validate first, build the value the Policy
+must see, call `security.Authorize`, and only then call `Fleets(s.db)`.
 `TestEveryServiceMethodAuthorizesBeforeTheModel` reads every exported Service
 method and refuses the opposite order; the runtime twin uses a nil database so
 even constructing the Model early fails.
@@ -132,9 +132,9 @@ customers with a technical name.
 people delete:
 
 ```go
-	g, err := security.Authorize(ctx, s.policy, actor, ClusterView, Cluster{})
-	record, err := Clusters(s.db).NewQuery().WhereKey(id).First(ctx, g)
-	_, err = security.Authorize(ctx, s.policy, actor, ClusterView, *record)
+	g, err := security.Authorize(ctx, s.policy, actor, FleetRecordView, Fleet{})
+	record, err := Fleets(s.db).NewQuery().WhereKey(id).First(ctx, g)
+	_, err = security.Authorize(ctx, s.policy, actor, FleetRecordView, *record)
 ```
 
 The first call sees an empty value, so every rule about the record itself —

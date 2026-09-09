@@ -28,7 +28,7 @@ func TestTheManifestFrameworkFloorMatchesGoMod(t *testing.T) {
 func TestTheReleaseSkillUsesTheManifestFrameworkFloor(t *testing.T) {
 	root := packageRoot(t)
 	manifest := readReleaseFile(t, root, "arandu.mod.toml")
-	skill := readReleaseFile(t, root, ".agents/skills/cluster-release/SKILL.md")
+	skill := readReleaseFile(t, root, ".agents/skills/fleet-release/SKILL.md")
 	declared := captureReleaseValue(t, manifest,
 		`(?m)^framework = ">= ([0-9]+\.[0-9]+)"$`,
 		"Framework floor in arandu.mod.toml")

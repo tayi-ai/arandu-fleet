@@ -23,7 +23,7 @@ func TestTheApplicationIntegrationHasOneCompositionFile(t *testing.T) {
 	root := packageRoot(t)
 	guides := []string{
 		"README.md",
-		".agents/skills/cluster-package/SKILL.md",
+		".agents/skills/fleet-package/SKILL.md",
 	}
 	bootstrapFile := regexp.MustCompile(`bootstrap/[A-Za-z0-9_.-]+\.go`)
 
@@ -34,7 +34,7 @@ func TestTheApplicationIntegrationHasOneCompositionFile(t *testing.T) {
 		}
 
 		text := string(body)
-		for _, required := range []string{"bootstrap/app.go", "cluster.New(", "k.Register"} {
+		for _, required := range []string{"bootstrap/app.go", "fleet.New(", "k.Register"} {
 			if !strings.Contains(text, required) {
 				t.Errorf("%s no longer teaches the explicit composition step %q", guide, required)
 			}
@@ -95,18 +95,18 @@ func TestThePackageUsesTheModelFirstDataPath(t *testing.T) {
 	wants := map[string][]string{
 		"model.go": {
 			`"github.com/arandu-io/hesape/database/model"`,
-			"model.Model[Cluster]",
-			"func Clusters(db *data.DB) *model.Model[Cluster]",
+			"model.Model[Fleet]",
+			"func Fleets(db *data.DB) *model.Model[Fleet]",
 		},
 		"service.go": {
 			"db     *data.DB",
-			"func NewClusterService(db *data.DB) *ClusterService",
-			"Clusters(s.db)",
-			") (*Cluster, error)",
-			") ([]*Cluster, error)",
+			"func NewFleetService(db *data.DB) *FleetService",
+			"Fleets(s.db)",
+			") (*Fleet, error)",
+			") ([]*Fleet, error)",
 		},
 		"module.go": {
-			"NewClusterService(db)",
+			"NewFleetService(db)",
 		},
 	}
 	for path, required := range wants {
@@ -129,14 +129,14 @@ func TestTheGuidesTeachTheModelFirstBoundary(t *testing.T) {
 
 	root := packageRoot(t)
 	guides := map[string][]string{
-		"AGENTS.md":                               {"Clusters(db)", "security.Authorize"},
-		"README.md":                               {"Clusters(db)", "Model terminal"},
-		"CONTRIBUTING.md":                         {"Clusters(db)", "authorizes before reaching the Model"},
-		"SECURITY.md":                             {"Model terminal", "data.Tenant(g)"},
-		".agents/skills/README.md":                {"CRUD Repository", "configured Model"},
-		".agents/skills/cluster-module/SKILL.md":  {"func Clusters", "security.Authorize"},
-		".agents/skills/cluster-policy/SKILL.md":  {"security.Authorize", "Clusters("},
-		".agents/skills/cluster-release/SKILL.md": {"Model-first", "configured copy"},
+		"AGENTS.md":                             {"Fleets(db)", "security.Authorize"},
+		"README.md":                             {"Fleets(db)", "Model terminal"},
+		"CONTRIBUTING.md":                       {"Fleets(db)", "authorizes before reaching the Model"},
+		"SECURITY.md":                           {"Model terminal", "data.Tenant(g)"},
+		".agents/skills/README.md":              {"CRUD Repository", "configured Model"},
+		".agents/skills/fleet-module/SKILL.md":  {"func Fleets", "security.Authorize"},
+		".agents/skills/fleet-policy/SKILL.md":  {"security.Authorize", "Fleets("},
+		".agents/skills/fleet-release/SKILL.md": {"Model-first", "configured copy"},
 	}
 	for path, required := range guides {
 		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
@@ -149,7 +149,7 @@ func TestTheGuidesTeachTheModelFirstBoundary(t *testing.T) {
 				t.Errorf("%s does not teach %q", path, want)
 			}
 		}
-		for _, stale := range []string{"ClusterRepository", "NewClusterRepository", "repository.go  data access"} {
+		for _, stale := range []string{"FleetRepository", "NewClusterRepository", "repository.go  data access"} {
 			if strings.Contains(text, stale) {
 				t.Errorf("%s still teaches the retired CRUD surface %q", path, stale)
 			}

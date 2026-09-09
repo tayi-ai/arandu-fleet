@@ -13,7 +13,7 @@ import (
 const (
 	// DefaultPrefix is where the routes are mounted when Config leaves Prefix
 	// empty.
-	DefaultPrefix = "/cluster"
+	DefaultPrefix = "/fleet"
 	// DefaultPageSize is how many records one page answers with when Config
 	// leaves PageSize at zero.
 	DefaultPageSize = 25
@@ -55,16 +55,16 @@ type Config struct {
 // where it is wired rather than on the first request that needed it.
 func (c Config) Validate() error {
 	if c.Tenant == "" {
-		return fmt.Errorf("cluster: Config.Tenant is required: a visitor with no session has to be read as some customer, and it cannot be one the request names")
+		return fmt.Errorf("fleet: Config.Tenant is required: a visitor with no session has to be read as some customer, and it cannot be one the request names")
 	}
 	// The same rule the framework applies to every tenant it accepts. A tenant
 	// is concatenated into a storage path, a cache key and a lock name, so one
 	// carrying a separator lands in another tenant's namespace.
 	if !security.ValidTenant(c.Tenant) {
-		return fmt.Errorf("cluster: Config.Tenant is %q, which cannot be a tenant: lowercase letters, digits, - and _, up to 64 characters", c.Tenant)
+		return fmt.Errorf("fleet: Config.Tenant is %q, which cannot be a tenant: lowercase letters, digits, - and _, up to 64 characters", c.Tenant)
 	}
 	if c.Prefix != "" && c.Prefix[0] != '/' {
-		return fmt.Errorf("cluster: Config.Prefix is %q and has to start with /", c.Prefix)
+		return fmt.Errorf("fleet: Config.Prefix is %q and has to start with /", c.Prefix)
 	}
 	if c.Prefix != "" {
 		if err := validateRoutePrefix(c.Prefix); err != nil {
@@ -72,7 +72,7 @@ func (c Config) Validate() error {
 		}
 	}
 	if c.PageSize < 0 || c.PageSize > MaxPageSize {
-		return fmt.Errorf("cluster: Config.PageSize is %d, and has to be between 0 and %d, where 0 means %d", c.PageSize, MaxPageSize, DefaultPageSize)
+		return fmt.Errorf("fleet: Config.PageSize is %d, and has to be between 0 and %d, where 0 means %d", c.PageSize, MaxPageSize, DefaultPageSize)
 	}
 	return nil
 }
@@ -84,7 +84,7 @@ func (c Config) Validate() error {
 func validateRoutePrefix(prefix string) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("cluster: Config.Prefix %q cannot be registered as a route path", prefix)
+			err = fmt.Errorf("fleet: Config.Prefix %q cannot be registered as a route path", prefix)
 		}
 	}()
 

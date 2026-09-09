@@ -66,40 +66,40 @@ func IsRole(r string) bool { return roles[r] }
 // the address of an ineligible node anywhere.
 func ValidateInventory(nodes []Node) error {
 	if len(nodes) == 0 {
-		return errors.New("cluster: inventory is empty")
+		return errors.New("fleet: inventory is empty")
 	}
 	ids := map[string]bool{}
 	ips := map[string]bool{}
 	for _, n := range nodes {
 		if _, ok := ordinal[n.ID]; !ok {
-			return fmt.Errorf("cluster: node %q: id must be an english cardinal numeral (one, two, ... twentyone)", n.ID)
+			return fmt.Errorf("fleet: node %q: id must be an english cardinal numeral (one, two, ... twentyone)", n.ID)
 		}
 		if ids[n.ID] {
-			return fmt.Errorf("cluster: node %q: duplicate id", n.ID)
+			return fmt.Errorf("fleet: node %q: duplicate id", n.ID)
 		}
 		ip := net.ParseIP(n.IP)
 		if ip == nil || ip.To4() == nil || !(ip.IsPrivate() || cgnat.Contains(ip)) {
-			return fmt.Errorf("cluster: node %q: private_ip must be a private IPv4 address (RFC 1918) or a Tailscale CGNAT address (100.64.0.0/10)", n.ID)
+			return fmt.Errorf("fleet: node %q: private_ip must be a private IPv4 address (RFC 1918) or a Tailscale CGNAT address (100.64.0.0/10)", n.ID)
 		}
 		if ips[n.IP] {
-			return fmt.Errorf("cluster: node %q: duplicate private_ip", n.ID)
+			return fmt.Errorf("fleet: node %q: duplicate private_ip", n.ID)
 		}
 		if !interfaceName.MatchString(n.Interface) {
-			return fmt.Errorf("cluster: node %q: interface is missing or malformed", n.ID)
+			return fmt.Errorf("fleet: node %q: interface is missing or malformed", n.ID)
 		}
 		if !roles[n.Role] {
-			return fmt.Errorf("cluster: node %q: role must be declared as train, rollout or eval", n.ID)
+			return fmt.Errorf("fleet: node %q: role must be declared as train, rollout or eval", n.ID)
 		}
 		if len(n.AvailableGPUIDs) == 0 {
-			return fmt.Errorf("cluster: node %q: available_gpu_ids is empty; a node without measured free GPUs is not eligible", n.ID)
+			return fmt.Errorf("fleet: node %q: available_gpu_ids is empty; a node without measured free GPUs is not eligible", n.ID)
 		}
 		seen := map[int]bool{}
 		for _, g := range n.AvailableGPUIDs {
 			if g < 0 {
-				return fmt.Errorf("cluster: node %q: available_gpu_ids has a negative index", n.ID)
+				return fmt.Errorf("fleet: node %q: available_gpu_ids has a negative index", n.ID)
 			}
 			if seen[g] {
-				return fmt.Errorf("cluster: node %q: available_gpu_ids repeats index %d", n.ID, g)
+				return fmt.Errorf("fleet: node %q: available_gpu_ids repeats index %d", n.ID, g)
 			}
 			seen[g] = true
 		}
@@ -162,7 +162,7 @@ func Plan(nodes []Node) (TrainingPlan, error) {
 	}
 	train := WithRole(ByNumeral(nodes), RoleTrain)
 	if len(train) == 0 {
-		return TrainingPlan{}, errors.New("cluster: no node declares role train; nothing to rank")
+		return TrainingPlan{}, errors.New("fleet: no node declares role train; nothing to rank")
 	}
 	plan := TrainingPlan{Master: train[0]}
 	for i, n := range train {

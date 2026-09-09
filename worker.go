@@ -57,7 +57,7 @@ type HTTPWorker struct {
 // NewHTTPWorker returns a client with the timeout the node API is designed for.
 func NewHTTPWorker(token string) (*HTTPWorker, error) {
 	if token == "" {
-		return nil, errors.New("cluster: the worker token is empty; refusing to address the fleet without one")
+		return nil, errors.New("fleet: the worker token is empty; refusing to address the fleet without one")
 	}
 	return &HTTPWorker{Token: token, Client: &http.Client{Timeout: 15 * time.Second}}, nil
 }
@@ -91,7 +91,7 @@ func (w *HTTPWorker) call(ctx context.Context, n Node, method, path string, body
 	req.Header.Set("Content-Type", "application/json")
 	res, err := w.Client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("cluster: node %s: %w", n.ID, err)
+		return nil, fmt.Errorf("fleet: node %s: %w", n.ID, err)
 	}
 	defer res.Body.Close()
 	answer, err := io.ReadAll(io.LimitReader(res.Body, maxAnswer))
@@ -99,7 +99,7 @@ func (w *HTTPWorker) call(ctx context.Context, n Node, method, path string, body
 		return nil, err
 	}
 	if res.StatusCode >= 300 {
-		return answer, fmt.Errorf("cluster: node %s answered HTTP %d: %s", n.ID, res.StatusCode, answer)
+		return answer, fmt.Errorf("fleet: node %s answered HTTP %d: %s", n.ID, res.StatusCode, answer)
 	}
 	return answer, nil
 }

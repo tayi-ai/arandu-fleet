@@ -18,15 +18,15 @@ const (
 	maxLimit     = 200
 )
 
-// sortableCluster is the ordering allowlist. A column name taken directly
+// sortableFleet is the ordering allowlist. A column name taken directly
 // from a request would turn ordering into an injection surface.
-var sortableCluster = map[string]string{
+var sortableFleet = map[string]string{
 	"":           "created_at",
 	"name":       "name",
 	"created_at": "created_at",
 }
 
-// ClusterService holds the rules of this package.
+// FleetService holds the rules of this package.
 //
 // It receives its collaborators through the constructor. There is no container
 // and no resolution by reflection: what this service is made of is written at
@@ -36,14 +36,14 @@ var sortableCluster = map[string]string{
 // Everything a handler is allowed to do goes through here. The service is the
 // only owner of the database handle, so the request layer cannot reach a Model
 // before the policy has answered.
-type ClusterService struct {
+type FleetService struct {
 	db     *data.DB
-	policy ClusterPolicy
+	policy FleetRecordPolicy
 }
 
-// NewClusterService wires the service over the application's database handle.
-func NewClusterService(db *data.DB) *ClusterService {
-	return &ClusterService{db: db}
+// NewFleetService wires the service over the application's database handle.
+func NewFleetService(db *data.DB) *FleetService {
+	return &FleetService{db: db}
 }
 
 // CreateRequest is the input contract.
@@ -74,21 +74,21 @@ var _ validation.Validatable = CreateRequest{}
 // The candidate is authorized before it is stored, and the candidate is what
 // the policy sees -- so a rule about what may be created is a rule about the
 // record being created, and not about the person alone.
-func (s *ClusterService) Create(ctx context.Context, actor security.Subject, in CreateRequest) (*Cluster, error) {
+func (s *FleetService) Create(ctx context.Context, actor security.Subject, in CreateRequest) (*Fleet, error) {
 	if errs := in.Validate(); errs.Any() {
 		return nil, errs
 	}
 
-	proposed := Cluster{Name: in.Name}
+	proposed := Fleet{Name: in.Name}
 
-	g, err := security.Authorize(ctx, s.policy, actor, ClusterCreate, proposed)
+	g, err := security.Authorize(ctx, s.policy, actor, FleetRecordCreate, proposed)
 	if err != nil {
 		return nil, err
 	}
 	if proposed.ID, err = data.NewID(); err != nil {
 		return nil, err
 	}
-	instance, err := Clusters(s.db).NewInstance(nil, false)
+	instance, err := Fleets(s.db).NewInstance(nil, false)
 	if err != nil {
 		return nil, err
 	}
@@ -116,13 +116,13 @@ func (s *ClusterService) Create(ctx context.Context, actor security.Subject, in 
 //
 // The read itself is already scoped by data.Tenant, so the second call is not
 // what keeps customers apart. It is what keeps the policy honest.
-func (s *ClusterService) Find(ctx context.Context, actor security.Subject, id string) (*Cluster, error) {
-	g, err := security.Authorize(ctx, s.policy, actor, ClusterView, Cluster{})
+func (s *FleetService) Find(ctx context.Context, actor security.Subject, id string) (*Fleet, error) {
+	g, err := security.Authorize(ctx, s.policy, actor, FleetRecordView, Fleet{})
 	if err != nil {
 		return nil, err
 	}
 
-	record, err := Clusters(s.db).NewQuery().WhereKey(id).First(ctx, g)
+	record, err := Fleets(s.db).NewQuery().WhereKey(id).First(ctx, g)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +130,7 @@ func (s *ClusterService) Find(ctx context.Context, actor security.Subject, id st
 		return nil, ErrNotFound
 	}
 
-	if _, err := security.Authorize(ctx, s.policy, actor, ClusterView, *record); err != nil {
+	if _, err := security.Authorize(ctx, s.policy, actor, FleetRecordView, *record); err != nil {
 		return nil, err
 	}
 	return record, nil
@@ -147,15 +147,15 @@ func (s *ClusterService) Find(ctx context.Context, actor security.Subject, id st
 // A rule that hides individual records from a listing belongs in the statement,
 // as a predicate, and the action here is what decides whether the listing may
 // run at all.
-func (s *ClusterService) List(ctx context.Context, actor security.Subject, q data.Query) ([]*Cluster, error) {
-	g, err := security.Authorize(ctx, s.policy, actor, ClusterList, Cluster{})
+func (s *FleetService) List(ctx context.Context, actor security.Subject, q data.Query) ([]*Fleet, error) {
+	g, err := security.Authorize(ctx, s.policy, actor, FleetRecordList, Fleet{})
 	if err != nil {
 		return nil, err
 	}
 
-	column, ok := sortableCluster[q.Sort]
+	column, ok := sortableFleet[q.Sort]
 	if !ok {
-		return nil, fmt.Errorf("cluster: sort field not allowed: %q", q.Sort)
+		return nil, fmt.Errorf("fleet: sort field not allowed: %q", q.Sort)
 	}
 
 	limit := q.Limit
@@ -166,7 +166,7 @@ func (s *ClusterService) List(ctx context.Context, actor security.Subject, q dat
 		limit = maxLimit
 	}
 
-	rows := Clusters(s.db)
+	rows := Fleets(s.db)
 	page := rows.NewQuery()
 	if q.Cursor != "" {
 		anchor, err := rows.NewQuery().WhereKey(q.Cursor).Value(ctx, g, column)
@@ -176,9 +176,9 @@ func (s *ClusterService) List(ctx context.Context, actor security.Subject, q dat
 		if anchor == nil {
 			return nil, nil
 		}
-		page = page.Where(func(after *model.Builder[Cluster]) {
+		page = page.Where(func(after *model.Builder[Fleet]) {
 			after.Where(column, ">", anchor).
-				OrWhere(func(equal *model.Builder[Cluster]) {
+				OrWhere(func(equal *model.Builder[Fleet]) {
 					equal.Where(column, "=", anchor).Where("id", ">", q.Cursor)
 				})
 		})

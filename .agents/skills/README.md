@@ -15,18 +15,18 @@ names the situation you are in rather than the topic it covers.
 
 | skill | when it fires |
 | --- | --- |
-| `cluster-policy` | opening an action, adding an authorized Model-backed use case, or anything answering 403 |
-| `cluster-module` | adding a route, a handler, a config field, a response field or a migration |
-| `cluster-release` | the gates, the manifest, a dependency, a version, a tag |
-| `cluster-vault-notes` | writing the note, the gap or the journal entry, when this checkout sits inside the Arandu Obsidian vault |
-| `cluster-package` | installing and wiring this package **into an application** |
+| `fleet-policy` | opening an action, adding an authorized Model-backed use case, or anything answering 403 |
+| `fleet-module` | adding a route, a handler, a config field, a response field or a migration |
+| `fleet-release` | the gates, the manifest, a dependency, a version, a tag |
+| `fleet-vault-notes` | writing the note, the gap or the journal entry, when this checkout sits inside the Arandu Obsidian vault |
+| `fleet-package` | installing and wiring this package **into an application** |
 
 The last one has a different audience from the other three, and that is on
 purpose: it travels with the package so that an assistant working in somebody
 else's project — the one running `go get` — has the wiring, the migration step
 and the closed policy in front of it instead of guessing.
 
-`cluster-vault-notes` fires on a condition rather than on a task: it applies
+`fleet-vault-notes` fires on a condition rather than on a task: it applies
 only when `MOC-arandu.md`, `plans/cmd/audit-vault/` and `45-modules/` are actually
 beside this checkout. Outside the vault it is inert, and it says so first, so a
 package cloned somewhere else never grows a folder tree imitating one.

@@ -1,4 +1,4 @@
-# Arandu Cluster
+# Arandu Fleet
 
 An Arandu package. It registers its own routes, owns its own table, and decides
 for itself who may reach either.
@@ -19,7 +19,7 @@ The import, with the other module imports:
 
 ```go
 import (
-	cluster "github.com/tayi-ai/arandu-fleet"
+	fleet "github.com/tayi-ai/arandu-fleet"
 )
 ```
 
@@ -27,7 +27,7 @@ The construction, in `Build`, after the session store exists and before
 `k.Register`:
 
 ```go
-	clusterModule, err := cluster.New(cluster.Config{
+	fleetModule, err := fleet.New(fleet.Config{
 		Tenant: cfg.Auth.Tenant,
 	}, db, sessions)
 	if err != nil {
@@ -38,7 +38,7 @@ The construction, in `Build`, after the session store exists and before
 And the registration, inside the `k.Register(...)` call already there:
 
 ```go
-		clusterModule,
+		fleetModule,
 ```
 
 Then, once, before the application serves:
@@ -69,7 +69,7 @@ writes nothing. A file changed outside its `arandu:begin custom` markers is
 reported as a conflict and left alone; `--force` publishes over one, and even
 then what is inside the markers is carried forward.
 
-The files land under `resources/views/vendor/cluster/`, and from that point
+The files land under `resources/views/vendor/fleet/`, and from that point
 they are yours. Nothing of this package is compiled beside them, so no view name
 is registered twice and no rule has to decide which of two files won — the
 consequence being that a view of this package that changes later does not reach
@@ -86,7 +86,7 @@ aru view:build
 and import the directory it wrote into, with the other imports:
 
 ```go
-	_ "your/module/path/storage/framework/views/vendor/cluster"
+	_ "your/module/path/storage/framework/views/vendor/fleet"
 ```
 
 Without that import the views are not in the binary, and the module refuses to
@@ -98,7 +98,7 @@ boot rather than answering the first request that reaches one of them with a
 | field | required | meaning |
 | --- | --- | --- |
 | `Tenant` | yes | the customer a visitor with no session is read as. From the application's configuration, never from the request. |
-| `Prefix` | no | where the routes are mounted. Defaults to `/cluster`. |
+| `Prefix` | no | where the routes are mounted. Defaults to `/fleet`. |
 | `PageSize` | no | how many records one page answers with. Defaults to 25, refused above 200. |
 
 `New` returns an error rather than starting half-wired, so a setting that
@@ -109,9 +109,9 @@ needed it.
 
 | method | path | name |
 | --- | --- | --- |
-| `GET` | `/cluster` | `cluster.index` |
-| `GET` | `/cluster/{id}` | `cluster.show` |
-| `POST` | `/cluster` | `cluster.store` |
+| `GET` | `/fleet` | `fleet.index` |
+| `GET` | `/fleet/{id}` | `fleet.show` |
+| `POST` | `/fleet` | `fleet.store` |
 
 Every one of them is refused until the policy is opened. That is the state the
 package ships in, and it is deliberate.
@@ -123,7 +123,7 @@ this package needs, one action at a time, inside the custom block:
 
 ```go
 	// arandu:begin custom
-	if a == ClusterView && (s.ID == record.ID || s.HasRole("admin")) {
+	if a == FleetRecordView && (s.ID == record.ID || s.HasRole("admin")) {
 		return nil
 	}
 	// arandu:end custom
@@ -133,8 +133,8 @@ What is not written there stays closed, including every action added later.
 
 ## Model-first data path
 
-`Cluster` embeds `model.Model[Cluster]`, and `Clusters(db)` is the one
-configured entry point for its table. `ClusterService` owns `*data.DB` and
+`Fleet` embeds `model.Model[Fleet]`, and `Fleets(db)` is the one
+configured entry point for its table. `FleetService` owns `*data.DB` and
 follows `validate -> security.Authorize -> Grant -> Model terminal`; handlers
 never hold the database or construct a Model.
 
@@ -143,7 +143,7 @@ and again against the row it found. List authorizes before building its scoped,
 allowlisted query. The Model keeps its default `tenant_id` scope on every
 terminal.
 
-Terminals return `*Cluster` and `[]*Cluster`. Keep those pointers intact:
+Terminals return `*Fleet` and `[]*Fleet`. Keep those pointers intact:
 copying an embedded Model leaves its `Entity` pointer aimed at the original
 allocation. `Resource` and `Collection` are explicit response snapshots and do
 not expose tenant or Model internals.
@@ -165,7 +165,7 @@ views.go       the files the application takes ownership of
 ## What is already correct, and has to stay that way
 
 **The policy denies everything.** There is no permit-all branch to delete
-later. The Service calls `security.Authorize` before its first `Clusters(db)`
+later. The Service calls `security.Authorize` before its first `Fleets(db)`
 reach, and every Model terminal requires the Grant that call produced.
 
 **Authorization precedes the Model.** The package audit checks that order in
@@ -191,7 +191,7 @@ go test -race ./...
 ```
 
 The denial suite constructs the Service with a nil database, so even building
-`Clusters(nil)` would panic. The structural twin reads the allowed path and
+`Fleets(nil)` would panic. The structural twin reads the allowed path and
 rejects any Service method that reaches the Model before `Authorize`.
 
 ## Licence

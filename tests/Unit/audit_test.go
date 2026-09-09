@@ -152,7 +152,7 @@ func TestEveryServiceMethodAuthorizesBeforeTheModel(t *testing.T) {
 	for _, source := range auditedFiles(t) {
 		for _, declaration := range source.file.Decls {
 			function, ok := declaration.(*ast.FuncDecl)
-			if !ok || function.Body == nil || receiverType(function) != "ClusterService" ||
+			if !ok || function.Body == nil || receiverType(function) != "FleetService" ||
 				!function.Name.IsExported() {
 				continue
 			}
@@ -175,12 +175,12 @@ func TestEveryServiceMethodAuthorizesBeforeTheModel(t *testing.T) {
 		}
 	}
 	if audited == 0 {
-		t.Fatal("no exported ClusterService method was found, so this test proved nothing")
+		t.Fatal("no exported FleetService method was found, so this test proved nothing")
 	}
 }
 
 // firstModelReach is where a Service first constructs the configured Model or
-// calls a promoted write terminal. Clusters itself counts: moving only its
+// calls a promoted write terminal. Fleets itself counts: moving only its
 // construction before Authorize is the mutation this audit exists to reject.
 func firstModelReach(body *ast.BlockStmt) token.Pos {
 	terminals := map[string]bool{
@@ -193,7 +193,7 @@ func firstModelReach(body *ast.BlockStmt) token.Pos {
 			return true
 		}
 		name := calledName(call)
-		if name != "Clusters" && !terminals[name] {
+		if name != "Fleets" && !terminals[name] {
 			return true
 		}
 		if found == token.NoPos || call.Pos() < found {
@@ -258,7 +258,7 @@ func TestTheServiceWritesTenantOnlyFromTheGrant(t *testing.T) {
 	for _, source := range auditedFiles(t) {
 		for _, declaration := range source.file.Decls {
 			function, ok := declaration.(*ast.FuncDecl)
-			if !ok || function.Body == nil || receiverType(function) != "ClusterService" {
+			if !ok || function.Body == nil || receiverType(function) != "FleetService" {
 				continue
 			}
 			ast.Inspect(function.Body, func(node ast.Node) bool {

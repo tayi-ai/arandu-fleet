@@ -16,6 +16,6 @@ network = true
 filesystem = false
 # It runs no other program.
 exec = false
-# module.go owns the clusters table, so whoever installs this has to run
+# module.go owns the fleets table, so whoever installs this has to run
 # `aru migrate`. Declaring it is how they find that out before deploying.
 migrations = true

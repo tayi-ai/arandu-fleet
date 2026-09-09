@@ -22,7 +22,7 @@ import (
 // neither a source directory nor a destination one, and there is no second
 // spelling of a destination for the first one to disagree with.
 //
-//go:embed resources/views
+//go:embed all:resources/publish
 var viewSources embed.FS
 
 // Where a view is written and what it is called.
@@ -32,7 +32,14 @@ var viewSources embed.FS
 // extension: it ends in .go so the build tag on the first line keeps the
 // compiler out of a file that is markup below the package clause.
 const (
-	viewRoot   = "resources/views"
+	// viewRoot is the directory the archive carries. It is deliberately not
+	// the destination: go mod drops every file whose path contains a segment
+	// named vendor, at any depth, so a source tree under resources/views/vendor
+	// is in the repository and missing from the published module.
+	viewRoot = "resources/publish"
+	// viewPrefix is where the same files are written in a project, which is the
+	// address an application looks for a package's views at.
+	viewPrefix = "resources/views/vendor/fleet"
 	viewSuffix = ".kyse.go"
 )
 
@@ -47,8 +54,6 @@ const compiledRoot = "storage/framework/views"
 // which is what makes the archive a literal picture of what lands in the
 // project. Two packages with a view called index are two files under two names
 // below it, and neither shadows the other or the application's own.
-const vendorDir = "vendor"
-
 // Publishes declares the files this package offers, each at the path it takes
 // relative to the root of the project.
 //
@@ -77,7 +82,12 @@ const vendorDir = "vendor"
 // it is the one thing the project is expected to edit. A package cannot know
 // what a screen should say in a product it has never seen.
 func (m *Module) Publishes() []foundation.Publication {
-	return []foundation.Publication{{Tag: foundation.PublishView, Files: viewSources}}
+	return []foundation.Publication{{
+		Tag:   foundation.PublishView,
+		Files: viewSources,
+		From:  viewRoot,
+		To:    viewPrefix,
+	}}
 }
 
 // PublishedPaths are the files in the archive, each relative to the root of the
@@ -103,7 +113,7 @@ func ViewPackages() []string {
 	var out []string
 	seen := make(map[string]bool)
 	for _, path := range publishedPaths {
-		dir := compiledRoot + strings.TrimPrefix(path[:strings.LastIndexByte(path, '/')], viewRoot)
+		dir := compiledRoot + strings.TrimPrefix(path[:strings.LastIndexByte(path, '/')], "resources/views")
 		if seen[dir] {
 			continue
 		}
@@ -128,24 +138,28 @@ func readArchive() (paths, names []string) {
 		if entry.IsDir() || !strings.HasSuffix(path, viewSuffix) {
 			return nil
 		}
-		paths = append(paths, path)
+		paths = append(paths, publishedPath(path))
 		names = append(names, viewName(path))
 		return nil
 	})
 	if err != nil {
-		panic("cluster: reading the embedded views: " + err.Error())
+		panic("fleet: reading the embedded views: " + err.Error())
 	}
 	if len(paths) == 0 {
-		panic("cluster: the embedded view directory holds no view, so every name this package renders would be missing and nothing would say so")
+		panic("fleet: the embedded view directory holds no view, so every name this package renders would be missing and nothing would say so")
 	}
 	return paths, names
 }
 
 // viewName turns an archive path into the name the view is registered under.
 //
-//	resources/views/vendor/cluster/index.kyse.go -> vendor.cluster.index
+//	resources/views/vendor/cluster/index.kyse.go -> vendor.fleet.index
+func publishedPath(path string) string {
+	return viewPrefix + strings.TrimPrefix(path, viewRoot)
+}
+
 func viewName(path string) string {
-	name := strings.TrimPrefix(strings.TrimPrefix(path, viewRoot), "/")
+	name := strings.TrimPrefix(publishedPath(path), "resources/views/")
 	name = strings.TrimSuffix(name, viewSuffix)
 	return strings.ReplaceAll(name, "/", ".")
 }

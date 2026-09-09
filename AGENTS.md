@@ -1,4 +1,4 @@
-# Working on Arandu Cluster
+# Working on Arandu Fleet
 
 This is an Arandu package: one entity with an embedded Hesape Model, one policy
 that decides about it, one service that owns the database handle, and the routes
@@ -62,7 +62,7 @@ this one must prove about itself it proves in its own suite or nowhere.
 
 | | measured with |
 | --- | --- |
-| 6 Go files, one per role, all in one package at the root | `grep -l '^package cluster' *.go` |
+| 6 Go files, one per role, all in one package at the root | `grep -l '^package fleet' *.go` |
 | 6 test files, 37 tests | `find tests -name '*_test.go'` · `go test -count=1 ./... -v \| grep -c '^--- PASS'` |
 | 3 routes | `grep -c 'r.Action' module.go` |
 | 5 actions the policy answers about | `grep -cE '^\t[A-Za-z]+ security.Action = ' policy.go` |
@@ -79,8 +79,8 @@ service.go     the rules and authorized Model access
 views.go       the files the application takes ownership of
 ```
 
-`Clusters(db)` configures the table, string primary key and default
-`tenant_id` scope. Its terminals return `*Cluster`/`[]*Cluster`; keep those
+`Fleets(db)` configures the table, string primary key and default
+`tenant_id` scope. Its terminals return `*Fleet`/`[]*Fleet`; keep those
 pointers intact because copying an embedded Model leaves its `Entity` pointer
 aimed at the original allocation. `Resource` and `Collection` are the deliberate
 response snapshot boundary.
@@ -94,7 +94,7 @@ rejected in review. None of them is missing by accident.
 | --- | --- |
 | a service provider, a container, a `Register()` that discovers things | `New(cfg, db, sessions)`, called by hand in the installer's `bootstrap/app.go`. Everything the package touches is a parameter |
 | a global `DB`, an `init()` that opens a connection | the `*data.DB` handed to `New`. A package that opened its own connection would be a package the application cannot point at a test database |
-| a CRUD Repository beside the Model | `Clusters(db)`, reached only by `ClusterService` after `security.Authorize` |
+| a CRUD Repository beside the Model | `Fleets(db)`, reached only by `FleetService` after `security.Authorize` |
 | a tenant read from the path, the body, the query or a header | `data.Tenant(g)`, from the Grant, which came from the session |
 | a permit-all branch in the policy "for now" | nothing. The policy denies, and an action is opened by writing the rule that opens it |
 | an `interface{}` config, a map of options, an env var read at call time | the typed `Config` struct, validated by `New` |
@@ -115,18 +115,18 @@ checks all four against the code.
 2. **Every Service method authorizes before it reaches the Model.**
    `TestEveryServiceMethodAuthorizesBeforeTheModel` checks the source, and
    `TestTheServiceRefusesBeforeReachingTheModel` gives the Service a nil handle
-   so even constructing `Clusters` in the wrong order fails.
+   so even constructing `Fleets` in the wrong order fails.
 3. **The tenant comes from `data.Tenant(g)`**, on every path, read and write.
    `TestTheTenantComesFromTheGrant` and
    `TestTheServiceWritesTenantOnlyFromTheGrant` hold both halves.
 4. **Nothing reaches the Model without passing the first two.** The denial
    suite constructs the Service with a nil database, so a call to
-   `Clusters(nil)` would panic. Every refusal it asserts is therefore proof
+   `Fleets(nil)` would panic. Every refusal it asserts is therefore proof
    that authorization happened before Model construction.
 
 `policy_test.go` holds those four by calling the code. `tests/Unit/audit_test.go`
 holds the same shape by *reading* it: every exported Service method must call
-`Authorize` before its first `Clusters`, every tenant write in the Service
+`Authorize` before its first `Fleets`, every tenant write in the Service
 comes from `data.Tenant(g)`, and no tenant accessor reads request input.
 
 It also compares `arandu.mod.toml` against what the code *calls* —

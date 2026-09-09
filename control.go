@@ -55,16 +55,16 @@ func (ControlPolicy) Can(_ context.Context, s security.Subject, a security.Actio
 		if s.Can(a) {
 			return nil
 		}
-		return fmt.Errorf("cluster: %s is not among the subject's effective actions", a)
+		return fmt.Errorf("fleet: %s is not among the subject's effective actions", a)
 	}
-	return fmt.Errorf("cluster: no rule allows %s on a run", a)
+	return fmt.Errorf("fleet: no rule allows %s on a run", a)
 }
 
 // ErrBusy is returned when a distributed run is already in flight.
 //
 // The cluster is a queue of one: two simultaneous launches contend for the
 // same cards, shuffle run ids and produce measurements that count for nothing.
-var ErrBusy = errors.New("cluster: a run is already in flight; the cluster is a queue of one")
+var ErrBusy = errors.New("fleet: a run is already in flight; the cluster is a queue of one")
 
 // ControlPlane coordinates the fleet from the inventory.
 type ControlPlane struct {
@@ -84,7 +84,7 @@ func NewControlPlane(nodes []Node, worker Worker) (*ControlPlane, error) {
 		return nil, err
 	}
 	if worker == nil {
-		return nil, errors.New("cluster: NewControlPlane needs a worker client")
+		return nil, errors.New("fleet: NewControlPlane needs a worker client")
 	}
 	return &ControlPlane{nodes: ByNumeral(nodes), worker: worker, now: time.Now}, nil
 }
@@ -119,7 +119,7 @@ func (c *ControlPlane) Status(ctx context.Context, actor security.Subject, role 
 // caller invokes once Status shows every node finished.
 func (c *ControlPlane) Dispatch(ctx context.Context, actor security.Subject, action, role string) (Run, error) {
 	if action != ActionDiagnostics && action != ActionCollective {
-		return Run{}, fmt.Errorf("cluster: %q is not an action the fleet runs; the actions are %s and %s", action, ActionDiagnostics, ActionCollective)
+		return Run{}, fmt.Errorf("fleet: %q is not an action the fleet runs; the actions are %s and %s", action, ActionDiagnostics, ActionCollective)
 	}
 	if action == ActionCollective {
 		role = RoleTrain
@@ -147,7 +147,7 @@ func (c *ControlPlane) Dispatch(ctx context.Context, actor security.Subject, act
 		cancel := Run{ID: run.ID, Action: "cancel", Answers: map[string]string{}, Errors: map[string]string{}}
 		c.fanOut(ctx, selected, &cancel, func(n Node) ([]byte, error) { return c.worker.Cancel(ctx, n, job) })
 		c.Release(run.ID)
-		return run, fmt.Errorf("cluster: partial launch of %s; cancelled on every selected node: %s", run.ID, joinErrors(run.Errors))
+		return run, fmt.Errorf("fleet: partial launch of %s; cancelled on every selected node: %s", run.ID, joinErrors(run.Errors))
 	}
 	return run, nil
 }
@@ -158,10 +158,10 @@ func (c *ControlPlane) Release(id string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.active == nil {
-		return errors.New("cluster: no run is in flight")
+		return errors.New("fleet: no run is in flight")
 	}
 	if c.active.ID != id {
-		return fmt.Errorf("cluster: %s is in flight, not %s", c.active.ID, id)
+		return fmt.Errorf("fleet: %s is in flight, not %s", c.active.ID, id)
 	}
 	c.active = nil
 	return nil
@@ -179,11 +179,11 @@ func (c *ControlPlane) InFlight() (Run, bool) {
 
 func (c *ControlPlane) selectNodes(role string) ([]Node, error) {
 	if role != "all" && !roles[role] {
-		return nil, fmt.Errorf("cluster: role must be all, train, rollout or eval, not %q", role)
+		return nil, fmt.Errorf("fleet: role must be all, train, rollout or eval, not %q", role)
 	}
 	selected := WithRole(c.nodes, role)
 	if len(selected) == 0 {
-		return nil, fmt.Errorf("cluster: no node declares role %q", role)
+		return nil, fmt.Errorf("fleet: no node declares role %q", role)
 	}
 	return selected, nil
 }

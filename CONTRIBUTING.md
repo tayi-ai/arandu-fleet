@@ -26,18 +26,18 @@ one of them will not be merged, whatever else it improves.
 1. **The policy denies by default.** No branch allows every action, and none is
    added. Opening an action means writing the rule that opens it.
 2. **Every Service method authorizes before reaching the Model.** The Grant is
-   then required by the Model terminal; constructing `Clusters(db)` first is
+   then required by the Model terminal; constructing `Fleets(db)` first is
    already the wrong order and the structural audit rejects it.
 3. **The tenant comes from `data.Tenant(g)`.** Not from the path, the body, the
    query string or a header, on any code path, including the read paths.
 4. **`arandu.mod.toml` matches the code.** Adding an outbound call, a file
    write or a process means declaring it there in the same commit.
 
-CRUD stays on `Clusters(db)` and its Builder. Add a Repository only for a
+CRUD stays on `Fleets(db)` and its Builder. Add a Repository only for a
 specialized complex query, read model, report, export or raw SQL contract; a
 wrapper around `Find`, `Get`, `Save` or `Delete` is a second data path.
 
-Model-backed entities stay pointers. Copying `Cluster` also copies an embedded
+Model-backed entities stay pointers. Copying `Fleet` also copies an embedded
 Model whose `Entity` still points to the original allocation. Response
 resources are the deliberate snapshot boundary; Service results are not.
 

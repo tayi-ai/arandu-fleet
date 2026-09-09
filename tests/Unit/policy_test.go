@@ -10,7 +10,7 @@ import (
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/hesape/database/model"
 
-	cluster "github.com/tayi-ai/arandu-fleet"
+	fleet "github.com/tayi-ai/arandu-fleet"
 )
 
 // The four properties this package exists to keep are checked here, and they
@@ -30,11 +30,11 @@ import (
 // everyAction is the whole set the policy answers about. A test that listed
 // four of five would pass while the fifth was open.
 var everyAction = []security.Action{
-	cluster.ClusterView,
-	cluster.ClusterList,
-	cluster.ClusterCreate,
-	cluster.ClusterUpdate,
-	cluster.ClusterDelete,
+	fleet.FleetRecordView,
+	fleet.FleetRecordList,
+	fleet.FleetRecordCreate,
+	fleet.FleetRecordUpdate,
+	fleet.FleetRecordDelete,
 }
 
 // administrator is the most privileged subject an application can produce. It
@@ -51,8 +51,8 @@ func TestThePolicyDeniesEveryActionByDefault(t *testing.T) {
 		t.Run(string(action), func(t *testing.T) {
 			t.Parallel()
 
-			_, err := security.Authorize(context.Background(), cluster.ClusterPolicy{},
-				administrator(), action, cluster.Cluster{})
+			_, err := security.Authorize(context.Background(), fleet.FleetRecordPolicy{},
+				administrator(), action, fleet.Fleet{})
 			if !errors.Is(err, security.ErrForbidden) {
 				t.Fatalf("an unopened policy allowed %s: got %v, want ErrForbidden", action, err)
 			}
@@ -63,10 +63,10 @@ func TestThePolicyDeniesEveryActionByDefault(t *testing.T) {
 func TestThePolicyDeniesARecordOfAnotherTenant(t *testing.T) {
 	t.Parallel()
 
-	other := cluster.Cluster{ID: "record-1", TenantID: "globex", Name: "theirs"}
+	other := fleet.Fleet{ID: "record-1", TenantID: "globex", Name: "theirs"}
 
-	err := cluster.ClusterPolicy{}.Can(context.Background(),
-		administrator(), cluster.ClusterView, other)
+	err := fleet.FleetRecordPolicy{}.Can(context.Background(),
+		administrator(), fleet.FleetRecordView, other)
 	if err == nil {
 		t.Fatal("the policy allowed a record belonging to another tenant")
 	}
@@ -81,8 +81,8 @@ func TestThePolicyDeniesAGuest(t *testing.T) {
 	t.Parallel()
 
 	for _, action := range everyAction {
-		_, err := security.Authorize(context.Background(), cluster.ClusterPolicy{},
-			security.Guest("acme"), action, cluster.Cluster{})
+		_, err := security.Authorize(context.Background(), fleet.FleetRecordPolicy{},
+			security.Guest("acme"), action, fleet.Fleet{})
 		if !errors.Is(err, security.ErrForbidden) {
 			t.Fatalf("a guest was allowed %s: got %v, want ErrForbidden", action, err)
 		}
@@ -95,8 +95,8 @@ func TestAuthorizeRefusesASubjectThatIsNobody(t *testing.T) {
 	// The zero Subject is a session that failed to load, not an anonymous
 	// reader, and it is refused before the policy is consulted. A package that
 	// answered it as a guest would answer a broken session as a visitor.
-	_, err := security.Authorize(context.Background(), cluster.ClusterPolicy{},
-		security.Subject{}, cluster.ClusterView, cluster.Cluster{})
+	_, err := security.Authorize(context.Background(), fleet.FleetRecordPolicy{},
+		security.Subject{}, fleet.FleetRecordView, fleet.Fleet{})
 	if !errors.Is(err, security.ErrForbidden) {
 		t.Fatalf("an empty subject was authorized: got %v, want ErrForbidden", err)
 	}
@@ -112,10 +112,10 @@ func nilHandle() *data.DB { return data.Wrap(nil, data.DialectSQLite) }
 func TestTheServiceRefusesBeforeReachingTheModel(t *testing.T) {
 	t.Parallel()
 
-	// A nil handle makes even construction of Clusters panic at
+	// A nil handle makes even construction of Fleets panic at
 	// GetQueryGrammar. This catches moving the configured Model entry point --
 	// not only its terminal -- ahead of authorization.
-	service := cluster.NewClusterService(nil)
+	service := fleet.NewFleetService(nil)
 	ctx := context.Background()
 
 	if _, err := service.Find(ctx, administrator(), "record-1"); !errors.Is(err, security.ErrForbidden) {
@@ -124,7 +124,7 @@ func TestTheServiceRefusesBeforeReachingTheModel(t *testing.T) {
 	if _, err := service.List(ctx, administrator(), data.Query{}); !errors.Is(err, security.ErrForbidden) {
 		t.Fatalf("List reached the Model before the policy refusal: %v", err)
 	}
-	if _, err := service.Create(ctx, administrator(), cluster.CreateRequest{Name: "one"}); !errors.Is(err, security.ErrForbidden) {
+	if _, err := service.Create(ctx, administrator(), fleet.CreateRequest{Name: "one"}); !errors.Is(err, security.ErrForbidden) {
 		t.Fatalf("Create reached the Model before the policy refusal: %v", err)
 	}
 }
@@ -132,18 +132,18 @@ func TestTheServiceRefusesBeforeReachingTheModel(t *testing.T) {
 func TestClustersReturnsAWiredTenantScopedModel(t *testing.T) {
 	t.Parallel()
 
-	rows := cluster.Clusters(nilHandle())
-	if rows.GetTable() != "clusters" {
-		t.Fatalf("Clusters table = %q, want clusters", rows.GetTable())
+	rows := fleet.Fleets(nilHandle())
+	if rows.GetTable() != "fleets" {
+		t.Fatalf("Fleets table = %q, want fleets", rows.GetTable())
 	}
 	if rows.KeyType != "string" || rows.Incrementing {
-		t.Fatalf("Clusters key is type %q, incrementing %t; want application-generated text", rows.KeyType, rows.Incrementing)
+		t.Fatalf("Fleets key is type %q, incrementing %t; want application-generated text", rows.KeyType, rows.Incrementing)
 	}
 	if rows.TenantColumn != "tenant_id" {
-		t.Fatalf("Clusters tenant column = %q, want tenant_id", rows.TenantColumn)
+		t.Fatalf("Fleets tenant column = %q, want tenant_id", rows.TenantColumn)
 	}
 	if model.ModelOf(rows.Entity) != rows {
-		t.Fatal("Clusters returned an entity whose embedded Model is not wired to it")
+		t.Fatal("Fleets returned an entity whose embedded Model is not wired to it")
 	}
 }
 
@@ -152,8 +152,8 @@ func TestASystemGrantWithoutATenantReachesNothing(t *testing.T) {
 
 	// A system grant with no tenant names no customer. The Model refuses it
 	// while preparing the query, before the nil handle can issue a statement.
-	_, err := cluster.Clusters(nilHandle()).NewQuery().WhereKey("record-1").First(
-		context.Background(), security.SystemGrant(cluster.ClusterView, ""))
+	_, err := fleet.Fleets(nilHandle()).NewQuery().WhereKey("record-1").First(
+		context.Background(), security.SystemGrant(fleet.FleetRecordView, ""))
 	if !errors.Is(err, model.ErrNoTenant) {
 		t.Fatalf("a system grant with no tenant returned %v, want ErrNoTenant", err)
 	}
@@ -162,7 +162,7 @@ func TestASystemGrantWithoutATenantReachesNothing(t *testing.T) {
 func TestTheTenantComesFromTheGrant(t *testing.T) {
 	t.Parallel()
 
-	g := security.SystemGrant(cluster.ClusterView, "acme")
+	g := security.SystemGrant(fleet.FleetRecordView, "acme")
 	if got := data.Tenant(g); got != "acme" {
 		t.Fatalf("data.Tenant(g) = %q, want %q", got, "acme")
 	}
@@ -178,13 +178,13 @@ func TestTheTenantComesFromTheGrant(t *testing.T) {
 func TestTheRequestValidatesItsInput(t *testing.T) {
 	t.Parallel()
 
-	if errs := (cluster.CreateRequest{}).Validate(); !errs.Any() {
+	if errs := (fleet.CreateRequest{}).Validate(); !errs.Any() {
 		t.Fatal("an empty request validated")
 	}
-	if errs := (cluster.CreateRequest{Name: strings.Repeat("a", 121)}).Validate(); !errs.Any() {
+	if errs := (fleet.CreateRequest{Name: strings.Repeat("a", 121)}).Validate(); !errs.Any() {
 		t.Fatal("a name past the maximum validated")
 	}
-	if errs := (cluster.CreateRequest{Name: "one"}).Validate(); errs.Any() {
+	if errs := (fleet.CreateRequest{Name: "one"}).Validate(); errs.Any() {
 		t.Fatalf("a valid request was rejected: %v", errs)
 	}
 }
@@ -192,13 +192,13 @@ func TestTheRequestValidatesItsInput(t *testing.T) {
 func TestTheConfigurationRefusesWhatCannotWork(t *testing.T) {
 	t.Parallel()
 
-	for name, cfg := range map[string]cluster.Config{
+	for name, cfg := range map[string]fleet.Config{
 		"no tenant":        {},
 		"tenant with a /":  {Tenant: "acme/reports"},
 		"tenant uppercase": {Tenant: "Acme"},
-		"relative prefix":  {Tenant: "acme", Prefix: "cluster"},
+		"relative prefix":  {Tenant: "acme", Prefix: "fleet"},
 		"page size too big": {Tenant: "acme",
-			PageSize: cluster.MaxPageSize + 1},
+			PageSize: fleet.MaxPageSize + 1},
 		"negative page size": {Tenant: "acme", PageSize: -1},
 	} {
 		if err := cfg.Validate(); err == nil {
@@ -206,7 +206,7 @@ func TestTheConfigurationRefusesWhatCannotWork(t *testing.T) {
 		}
 	}
 
-	if err := (cluster.Config{Tenant: "acme"}).Validate(); err != nil {
+	if err := (fleet.Config{Tenant: "acme"}).Validate(); err != nil {
 		t.Fatalf("a valid configuration was refused: %v", err)
 	}
 }
