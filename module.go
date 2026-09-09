@@ -13,6 +13,7 @@
 //	service.go     -> the rules and Model access, after authorization
 //	inventory.go   -> the nodes of the fleet, and what makes one eligible
 //	worker.go      -> the HTTP client that reaches a node's API
+//	agent.go       -> the node's API itself, the other half of that protocol
 //	control.go     -> the control plane: one run at a time, across the nodes
 //
 // An application registers it explicitly. There is no service provider, no

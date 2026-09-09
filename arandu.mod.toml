@@ -13,10 +13,15 @@ profiles = ["conventional", "performance"]
 # worker.go calls the node API over HTTP, so requests do leave the process:
 # whoever installs this is running something that reaches the private network.
 network = true
-# It keeps no state outside the database.
-filesystem = false
-# It runs no other program.
-exec = false
+# agent.go writes one log and one record per run, and receives artifacts under
+# a root the host declares. A node that ran work and kept nothing is a node
+# whose runs cannot be audited afterwards.
+filesystem = true
+# agent.go runs what the host's Program returned, in its own process group.
+# This is the widest capability there is, and it is the point of the agent
+# half: an installation that only dispatches work does not need it, and should
+# read this line before deciding which half it is installing.
+exec = true
 # module.go owns the fleets table, so whoever installs this has to run
 # `aru migrate`. Declaring it is how they find that out before deploying.
 migrations = true

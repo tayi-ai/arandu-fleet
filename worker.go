@@ -20,10 +20,19 @@ const (
 	ActionCollective  = "collective"
 )
 
-// Job is what a worker is asked to run: one run id, one action.
+// Job is what a worker is asked to run: one run id, one action, and whatever
+// the action is built from.
+//
+// It is the one type both halves of the protocol use -- HTTPWorker marshals it,
+// Agent decodes it -- so a field added on one end cannot be missing on the
+// other. That was the reason to keep both halves in this module.
 type Job struct {
 	ID     string `json:"id"`
 	Action string `json:"action"`
+	// Request stays raw because its shape belongs to the installation's Program.
+	// A module that parsed it would have to know every action anybody ever adds,
+	// and the vocabulary is exactly what this module refuses to own.
+	Request json.RawMessage `json:"request,omitempty"`
 }
 
 // Worker is the node API as the control plane sees it.
