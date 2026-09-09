@@ -129,7 +129,7 @@ func TestTheServiceRefusesBeforeReachingTheModel(t *testing.T) {
 	}
 }
 
-func TestClustersReturnsAWiredTenantScopedModel(t *testing.T) {
+func TestFleetsReturnsAWiredTenantScopedModel(t *testing.T) {
 	t.Parallel()
 
 	rows := fleet.Fleets(nilHandle())

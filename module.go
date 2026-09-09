@@ -1,6 +1,7 @@
-// Package cluster is an Arandu module: one entity, one policy that decides
+// Package fleet is an Arandu module: one entity, one policy that decides
 // about it, one service that owns its Model-first data path, and the routes that
-// reach them.
+// reach them. Beside them sits the control plane that dispatches work to the
+// nodes of the fleet.
 //
 // The files are laid out by role rather than by layer, so the whole package
 // reads top to bottom:
@@ -8,9 +9,11 @@
 //	module.go      -> registration, routes, handlers and migrations
 //	config.go      -> what the application passes in
 //	model.go       -> the entity, and what it may answer with
-//	policy.go      -> who may do what
+//	policy.go      -> who may do what with a record
 //	service.go     -> the rules and Model access, after authorization
-//	views.go       -> the files the application takes ownership of
+//	inventory.go   -> the nodes of the fleet, and what makes one eligible
+//	worker.go      -> the HTTP client that reaches a node's API
+//	control.go     -> the control plane: one run at a time, across the nodes
 //
 // An application registers it explicitly. There is no service provider, no
 // container and no discovery: the wiring is three lines somebody wrote, and
@@ -20,9 +23,7 @@ package fleet
 import (
 	"context"
 	"errors"
-	"fmt"
 	stdhttp "net/http"
-	"strings"
 
 	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/foundation"
@@ -31,7 +32,6 @@ import (
 	"github.com/arandu-io/framework/validation"
 	"github.com/arandu-io/hesape/database/migrations"
 	"github.com/arandu-io/hesape/database/schema"
-	"github.com/arandu-io/hesape/view"
 )
 
 // Module is what the application registers.
@@ -40,12 +40,16 @@ import (
 // that pair is the whole public contract between a package and the framework.
 //
 // It also implements foundation.Migratable, because it owns a table, and
-// foundation.Publishable, because it hands view sources to the project. The
-// other optional interfaces are declared beside Module in the framework and are
-// opted into the same way, by implementing them: Bootable to prepare state at
-// boot, Background to run a loop of its own, Schedulable to declare work for
-// the scheduler, Health to report on the storage it depends on, Closable to
-// give resources back at shutdown.
+// foundation.Bootable, which is where a module prepares state before it serves.
+// The other optional interfaces are declared beside Module in the framework and
+// are opted into the same way, by implementing them: Background to run a loop of
+// its own, Schedulable to declare work for the scheduler, Health to report on
+// the storage it depends on, Closable to give resources back at shutdown.
+//
+// It does not implement foundation.Publishable. It answers with JSON and hands
+// no view source to the project, because a published view lands under a path
+// with a segment named vendor and the go command refuses to import a package
+// from there.
 type Module struct {
 	cfg      Config
 	svc      *FleetService
@@ -54,10 +58,9 @@ type Module struct {
 
 // Compile-time proof that the module honors the contracts it claims.
 var (
-	_ foundation.Module      = (*Module)(nil)
-	_ foundation.Migratable  = (*Module)(nil)
-	_ foundation.Bootable    = (*Module)(nil)
-	_ foundation.Publishable = (*Module)(nil)
+	_ foundation.Module     = (*Module)(nil)
+	_ foundation.Migratable = (*Module)(nil)
+	_ foundation.Bootable   = (*Module)(nil)
 )
 
 // New returns the module, or the reason it cannot be built.
@@ -104,69 +107,18 @@ func (m *Module) Routes(r *fhttp.Router) {
 	r.Action(stdhttp.MethodPost, m.cfg.Prefix, m.store).Name("fleet.store")
 }
 
-// PublishCommand is what an application runs to take ownership of the views
-// this package offers.
+// Boot prepares nothing, and says so where the framework asks.
 //
-// It is spelled out as a constant so that whatever says it -- the refusal
-// below, or a message an application writes for its own operators -- says one
-// thing. A person who is told two different commands for one job tries both.
+// Everything this module needs arrived through New, which refuses a wiring that
+// cannot work, so there is no state left to build at start-up and no failure
+// left for this method to report. It is implemented rather than dropped because
+// Bootable is the seam a later dependency would be checked at, and an empty Boot
+// is where that check goes without moving the interface list around it.
 //
-// The command reads the modules the application registered and writes what each
-// one declares, which is why it is the application's command and not this
-// package's: nothing outside the application knows which modules it holds.
-const PublishCommand = "aru vendor:publish --apply"
-
-// Boot refuses to serve when a view this package renders is not in the binary.
-//
-// A compiled view registers itself from init(), so by the time anything boots
-// the question has one answer already: either the application published the
-// files, compiled them and imported the package they became, or it did not.
-// Asking here turns "did anybody run the install command" into one refusal at
-// start-up that names the views and the command, instead of a 500 on the first
-// request that reached one of them -- which is where it used to be answered,
-// once per page, to whoever happened to open it.
-//
-// It also holds the destination. Every file the archive offers has to land
-// under the vendor directory named after this module: an archive that reached
-// resources/views/home.kyse.go would land on a page the application wrote, and
-// what publishes the files writes what the archive says.
-func (m *Module) Boot(context.Context) error {
-	prefix := viewPrefix + "/"
-	var stray []string
-	for _, path := range PublishedPaths() {
-		if !strings.HasPrefix(path, prefix) {
-			stray = append(stray, path)
-		}
-	}
-	if len(stray) > 0 {
-		return fmt.Errorf("fleet: %s would be published outside %s, where it lands on a file the application wrote",
-			strings.Join(stray, ", "), prefix)
-	}
-
-	registered := make(map[string]bool)
-	for _, name := range view.Registered() {
-		registered[name] = true
-	}
-	var missing []string
-	for _, name := range ViewNames() {
-		if !registered[name] {
-			missing = append(missing, name)
-		}
-	}
-	if len(missing) > 0 {
-		// The compiled packages are named because the import is the half of the
-		// install nothing else can do: the command writes the sources, the view
-		// compiler turns them into Go, and a package the application does not
-		// import is not linked at all.
-		imports := make([]string, 0, len(ViewPackages()))
-		for _, pkg := range ViewPackages() {
-			imports = append(imports, "<module path>/"+pkg)
-		}
-		return fmt.Errorf("fleet: no view is registered as %s. Run `%s`, then `aru view:build`, then import %s in bootstrap/app.go",
-			strings.Join(missing, ", "), PublishCommand, strings.Join(imports, ", "))
-	}
-	return nil
-}
+// The one thing it used to hold is gone: this module answers with JSON and
+// renders no view, so there is no published file whose absence it could refuse
+// to serve without.
+func (m *Module) Boot(context.Context) error { return nil }
 
 // Handlers are thin on purpose: read the input, ask the service, answer. No
 // rule, database handle or Model construction lives here. A handler that

@@ -10,7 +10,8 @@ framework = ">= 0.46"
 profiles = ["conventional", "performance"]
 
 [permissions]
-# It answers requests and reads its own rows. Nothing leaves the process.
+# worker.go calls the node API over HTTP, so requests do leave the process:
+# whoever installs this is running something that reaches the private network.
 network = true
 # It keeps no state outside the database.
 filesystem = false

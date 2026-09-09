@@ -50,48 +50,11 @@ aru migrate
 This package owns a table, which is why the migration step is not optional and
 why `arandu.mod.toml` says `migrations = true`.
 
-## Publish the views
-
-This package carries the markup of its own pages and hands it over instead of
-rendering it from the inside, because a page you cannot edit is a page that says
-the wrong thing in your product.
-
-Look at what would be written, then write it:
-
-```bash
-aru vendor:publish --tag=view
-aru vendor:publish --tag=view --apply
-```
-
-Nothing is written without `--apply`. The preview lists every file as `create`,
-`update`, `unchanged` or `conflict`, and running the command a second time
-writes nothing. A file changed outside its `arandu:begin custom` markers is
-reported as a conflict and left alone; `--force` publishes over one, and even
-then what is inside the markers is carried forward.
-
-The files land under `resources/views/vendor/fleet/`, and from that point
-they are yours. Nothing of this package is compiled beside them, so no view name
-is registered twice and no rule has to decide which of two files won — the
-consequence being that a view of this package that changes later does not reach
-a project that already published it.
-
-Two steps are left to you, and they are left to you because a command that
-edited `bootstrap/app.go` behind your back is a command whose output nobody can
-explain. Compile what was written:
-
-```bash
-aru view:build
-```
-
-and import the directory it wrote into, with the other imports:
-
-```go
-	_ "your/module/path/storage/framework/views/vendor/fleet"
-```
-
-Without that import the views are not in the binary, and the module refuses to
-boot rather than answering the first request that reaches one of them with a
-500. The refusal names the view, the command and the import.
+There is no publication step. This package answers with JSON and ships no view:
+a view of an installed module lands under a path with a segment named `vendor`,
+and the go command refuses to import a package from there, so there is nothing
+for `aru vendor:publish` or `aru view:build` to do here. The screens are the
+installing application's.
 
 ## Configuration
 
@@ -157,9 +120,11 @@ report, export or raw SQL contract that the common Model path cannot express.
 module.go      registration, routes, handlers and migrations
 config.go      what the application passes in
 model.go       the entity, and what it may answer with
-policy.go      who may do what
+policy.go      who may do what with a record
 service.go     the rules and authorized Model access
-views.go       the files the application takes ownership of
+inventory.go   the nodes of the fleet, and what makes one eligible
+worker.go      the HTTP client that reaches a node's API
+control.go     the control plane: one run at a time, across the nodes
 ```
 
 ## What is already correct, and has to stay that way

@@ -56,7 +56,7 @@ func (FleetRecordPolicy) Can(ctx context.Context, s security.Subject, a security
 	// The empty id is the candidate that has not been stored yet, which belongs
 	// to nobody until it is written with the tenant off the Grant.
 	if record.ID != "" && record.TenantID != s.Tenant {
-		return fmt.Errorf("cluster belongs to another tenant")
+		return fmt.Errorf("fleet belongs to another tenant")
 	}
 
 	// arandu:begin custom
@@ -76,5 +76,5 @@ func (FleetRecordPolicy) Can(ctx context.Context, s security.Subject, a security
 	//	}
 	// arandu:end custom
 
-	return fmt.Errorf("no rule allows %s on cluster", a)
+	return fmt.Errorf("no rule allows %s on fleet", a)
 }

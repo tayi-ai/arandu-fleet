@@ -29,7 +29,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$(git rev-list -n 1 "$TAG")"
-          archive="$RUNNER_TEMP/package-cluster"
+          archive="$RUNNER_TEMP/package-fleet"
           mkdir -p "$archive"
           git archive "$TAG" | tar -x -C "$archive"
           cd "$archive"

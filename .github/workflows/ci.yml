@@ -115,7 +115,7 @@ jobs:
       #
       # It is outside the template markers on purpose, so it survives configure:
       # a package cloned from here inherits the check, which is the whole reason
-      # a cluster carries CI at all.
+      # a package carries CI at all.
       - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest

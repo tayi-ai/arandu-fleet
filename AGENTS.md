@@ -62,10 +62,11 @@ this one must prove about itself it proves in its own suite or nowhere.
 
 | | measured with |
 | --- | --- |
-| 6 Go files, one per role, all in one package at the root | `grep -l '^package fleet' *.go` |
+| 8 Go files, one per role, all in one package at the root | `grep -l '^package fleet' *.go` |
 | 6 test files, 37 tests | `find tests -name '*_test.go'` · `go test -count=1 ./... -v \| grep -c '^--- PASS'` |
 | 3 routes | `grep -c 'r.Action' module.go` |
-| 5 actions the policy answers about | `grep -cE '^\t[A-Za-z]+ security.Action = ' policy.go` |
+| 5 actions the record policy answers about | `grep -cE '^\t[A-Za-z]+ security.Action = ' policy.go` |
+| 2 actions the control plane answers about | `grep -cE '^\t[A-Za-z]+ security.Action = ' control.go` |
 | 2 direct dependencies, both under `arandu-io` | `go list -m -f '{{if and (not .Indirect) (not .Main)}}{{.Path}} {{.Version}}{{end}}' all` |
 
 The layout is by role rather than by layer, so the package reads top to bottom:
@@ -74,10 +75,18 @@ The layout is by role rather than by layer, so the package reads top to bottom:
 module.go      registration, routes, handlers and migrations
 config.go      what the application passes in
 model.go       the entity, and what it may answer with
-policy.go      who may do what
+policy.go      who may do what with a record
 service.go     the rules and authorized Model access
-views.go       the files the application takes ownership of
+inventory.go   the nodes of the fleet, and what makes one eligible
+worker.go      the HTTP client that reaches a node's API
+control.go     the control plane: one run at a time, across the nodes
 ```
+
+Two families of actions live side by side and are not the same vocabulary.
+`FleetView` and `FleetDispatch`, in `control.go`, are about the fleet itself:
+reading the inventory and starting a run on it. `FleetRecordView` and the four
+beside it, in `policy.go`, are about a stored record. Merging them would let
+somebody who may read a row dispatch work to twenty-one machines.
 
 `Fleets(db)` configures the table, string primary key and default
 `tenant_id` scope. Its terminals return `*Fleet`/`[]*Fleet`; keep those
@@ -100,7 +109,7 @@ rejected in review. None of them is missing by accident.
 | an `interface{}` config, a map of options, an env var read at call time | the typed `Config` struct, validated by `New` |
 | a `panic` on bad wiring | an `error` from `New`. A wiring mistake found at boot costs one restart |
 | a third dependency | an argument, first. This module is imported into other people's builds |
-| a command of its own that copies files into a project | `Publishes()`, which declares a tagged tree and nothing more. `aru vendor:publish` asks the application which modules it registered and writes what each one declares, so one command serves every installed package instead of one command per package |
+| a command of its own that copies files into a project | nothing. This package publishes no file and answers with JSON. The framework's own route for that is `Publishes()`, a declared tagged tree that `aru vendor:publish` writes, and it is not implemented here: a published view lands under a path with a segment named `vendor`, which the go command refuses to import a package from |
 
 ## The four properties
 
