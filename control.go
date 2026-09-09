@@ -98,7 +98,7 @@ func NewControlPlane(convention Convention, nodes []Node, worker Worker) (*Contr
 // Convention is what this control plane validates its inventory against.
 func (c *ControlPlane) Convention() Convention { return c.convention }
 
-// Nodes returns the inventory in numeral order.
+// Nodes returns the inventory in the order the convention declares.
 func (c *ControlPlane) Nodes() []Node { return append([]Node(nil), c.nodes...) }
 
 // Plan returns the training group the inventory yields.
