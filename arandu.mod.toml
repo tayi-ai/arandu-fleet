@@ -11,7 +11,7 @@ profiles = ["conventional", "performance"]
 
 [permissions]
 # It answers requests and reads its own rows. Nothing leaves the process.
-network = false
+network = true
 # It keeps no state outside the database.
 filesystem = false
 # It runs no other program.
