@@ -6,7 +6,7 @@ for itself who may reach either.
 ## Install
 
 ```bash
-go get github.com/tayi-ai/arandu-cluster
+go get github.com/tayi-ai/arandu-fleet
 ```
 
 ## Wire it
@@ -19,7 +19,7 @@ The import, with the other module imports:
 
 ```go
 import (
-	cluster "github.com/tayi-ai/arandu-cluster"
+	cluster "github.com/tayi-ai/arandu-fleet"
 )
 ```
 

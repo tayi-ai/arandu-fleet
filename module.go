@@ -15,7 +15,7 @@
 // An application registers it explicitly. There is no service provider, no
 // container and no discovery: the wiring is three lines somebody wrote, and
 // reading them is how they learn what the application is made of.
-package cluster
+package fleet
 
 import (
 	"context"

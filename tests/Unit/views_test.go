@@ -15,7 +15,7 @@ import (
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/hesape/view"
 
-	cluster "github.com/tayi-ai/arandu-cluster"
+	cluster "github.com/tayi-ai/arandu-fleet"
 )
 
 // How a view of this package reaches a page, and why there is only one way.

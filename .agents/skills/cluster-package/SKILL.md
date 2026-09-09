@@ -1,6 +1,6 @@
 ---
 name: cluster-package
-description: Install, wire and use the Arandu Cluster package (Go, Arandu) in an application. Use when the request is to "install Arandu Cluster", "add cluster to the app", "go get github.com/tayi-ai/arandu-cluster", "wire it into bootstrap/app.go", "register the module", "use the cluster routes", "everything under /cluster returns 403", "403 forbidden from cluster", "the table does not exist", "no such table", "change where it is mounted", "let admins read it", or when a project's go.mod already requires github.com/tayi-ai/arandu-cluster. Covers the three lines of wiring and where each one goes, the Config fields and which one is required, the routes and their names, why the policy refuses everything until somebody opens it, and the migration step that is not optional.
+description: Install, wire and use the Arandu Cluster package (Go, Arandu) in an application. Use when the request is to "install Arandu Cluster", "add cluster to the app", "go get github.com/tayi-ai/arandu-fleet", "wire it into bootstrap/app.go", "register the module", "use the cluster routes", "everything under /cluster returns 403", "403 forbidden from cluster", "the table does not exist", "no such table", "change where it is mounted", "let admins read it", or when a project's go.mod already requires github.com/tayi-ai/arandu-fleet. Covers the three lines of wiring and where each one goes, the Config fields and which one is required, the routes and their names, why the policy refuses everything until somebody opens it, and the migration step that is not optional.
 license: MIT
 ---
 
@@ -14,7 +14,7 @@ happen.
 ## Install
 
 ```bash
-go get github.com/tayi-ai/arandu-cluster
+go get github.com/tayi-ai/arandu-fleet
 ```
 
 ## The three lines of wiring, and where each one goes
@@ -26,7 +26,7 @@ The import, with the other module imports:
 
 ```go
 import (
-	cluster "github.com/tayi-ai/arandu-cluster"
+	cluster "github.com/tayi-ai/arandu-fleet"
 )
 ```
 
@@ -158,7 +158,7 @@ answers 200 with an empty body is not something it does.
 ## Reporting a problem
 
 Issues and pull requests go to the repository the module path names,
-`github.com/tayi-ai/arandu-cluster`, which belongs to `tayi-ai`. A vulnerability goes to the
+`github.com/tayi-ai/arandu-fleet`, which belongs to `tayi-ai`. A vulnerability goes to the
 private advisory form named in that repository's `SECURITY.md`, and never into
 an issue.
 

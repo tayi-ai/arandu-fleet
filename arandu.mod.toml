@@ -5,7 +5,7 @@
 # calls and then holds an HTTP client is rejected, which is what makes the
 # four lines below worth reading before installing anything.
 
-name = "tayi-ai/cluster"
+name = "tayi-ai/fleet"
 framework = ">= 0.46"
 profiles = ["conventional", "performance"]
 

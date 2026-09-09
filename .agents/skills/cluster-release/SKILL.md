@@ -55,7 +55,7 @@ inside and never loads a dependency, so the manifest of an installed package is
 opened by nothing but that package's own suite.
 
 ```toml
-name = "tayi-ai/cluster"
+name = "tayi-ai/fleet"
 framework = ">= 0.46"
 profiles = ["conventional", "performance"]
 

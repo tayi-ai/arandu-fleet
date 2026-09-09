@@ -65,4 +65,4 @@ Do not open an issue. See [SECURITY.md](SECURITY.md).
 ## Licence
 
 By contributing you agree that your contribution is licensed under the MIT
-licence, the same as the rest of github.com/tayi-ai/arandu-cluster.
+licence, the same as the rest of github.com/tayi-ai/arandu-fleet.

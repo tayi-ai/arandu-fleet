@@ -8,58 +8,58 @@ import (
 	"testing"
 
 	"github.com/arandu-io/framework/security"
-	cluster "github.com/tayi-ai/arandu-cluster"
+	fleet "github.com/tayi-ai/arandu-fleet"
 )
 
-func inventory() []cluster.Node {
-	return []cluster.Node{
-		{ID: "five", IP: "100.64.0.5", Interface: "tailscale0", Role: cluster.RoleTrain, AvailableGPUIDs: []int{0, 1}},
-		{ID: "one", IP: "100.64.0.1", Interface: "tailscale0", Role: cluster.RoleTrain, AvailableGPUIDs: []int{0, 1}},
-		{ID: "three", IP: "10.0.0.3", Interface: "tailscale0", Role: cluster.RoleTrain, AvailableGPUIDs: []int{1}},
-		{ID: "seven", IP: "100.64.0.7", Interface: "tailscale0", Role: cluster.RoleRollout, AvailableGPUIDs: []int{0, 1}},
-		{ID: "twentyone", IP: "100.64.0.21", Interface: "tailscale0", Role: cluster.RoleEval, AvailableGPUIDs: []int{0}},
+func inventory() []fleet.Node {
+	return []fleet.Node{
+		{ID: "five", IP: "100.64.0.5", Interface: "tailscale0", Role: fleet.RoleTrain, AvailableGPUIDs: []int{0, 1}},
+		{ID: "one", IP: "100.64.0.1", Interface: "tailscale0", Role: fleet.RoleTrain, AvailableGPUIDs: []int{0, 1}},
+		{ID: "three", IP: "10.0.0.3", Interface: "tailscale0", Role: fleet.RoleTrain, AvailableGPUIDs: []int{1}},
+		{ID: "seven", IP: "100.64.0.7", Interface: "tailscale0", Role: fleet.RoleRollout, AvailableGPUIDs: []int{0, 1}},
+		{ID: "twentyone", IP: "100.64.0.21", Interface: "tailscale0", Role: fleet.RoleEval, AvailableGPUIDs: []int{0}},
 	}
 }
 
 func TestInventoryValidationRefusesWhatMustNotBeAddressed(t *testing.T) {
-	if err := cluster.ValidateInventory(inventory()); err != nil {
+	if err := fleet.ValidateInventory(inventory()); err != nil {
 		t.Fatalf("valid inventory refused: %v", err)
 	}
-	mutate := func(f func(n *cluster.Node)) []cluster.Node {
+	mutate := func(f func(n *fleet.Node)) []fleet.Node {
 		nodes := inventory()
 		f(&nodes[0])
 		return nodes
 	}
-	cases := map[string][]cluster.Node{
-		"integer id":        mutate(func(n *cluster.Node) { n.ID = "5" }),
-		"public ip":         mutate(func(n *cluster.Node) { n.IP = "8.8.8.8" }),
-		"ipv6":              mutate(func(n *cluster.Node) { n.IP = "fd00::1" }),
-		"undeclared role":   mutate(func(n *cluster.Node) { n.Role = "" }),
-		"unknown role":      mutate(func(n *cluster.Node) { n.Role = "serve" }),
-		"unmeasured gpus":   mutate(func(n *cluster.Node) { n.AvailableGPUIDs = nil }),
-		"negative gpu":      mutate(func(n *cluster.Node) { n.AvailableGPUIDs = []int{-1} }),
-		"repeated gpu":      mutate(func(n *cluster.Node) { n.AvailableGPUIDs = []int{0, 0} }),
-		"malformed iface":   mutate(func(n *cluster.Node) { n.Interface = "tail scale0" }),
-		"duplicate id":      append(inventory(), cluster.Node{ID: "five", IP: "100.64.0.99", Interface: "tailscale0", Role: "eval", AvailableGPUIDs: []int{0}}),
-		"duplicate address": append(inventory(), cluster.Node{ID: "nine", IP: "100.64.0.5", Interface: "tailscale0", Role: "eval", AvailableGPUIDs: []int{0}}),
+	cases := map[string][]fleet.Node{
+		"integer id":        mutate(func(n *fleet.Node) { n.ID = "5" }),
+		"public ip":         mutate(func(n *fleet.Node) { n.IP = "8.8.8.8" }),
+		"ipv6":              mutate(func(n *fleet.Node) { n.IP = "fd00::1" }),
+		"undeclared role":   mutate(func(n *fleet.Node) { n.Role = "" }),
+		"unknown role":      mutate(func(n *fleet.Node) { n.Role = "serve" }),
+		"unmeasured gpus":   mutate(func(n *fleet.Node) { n.AvailableGPUIDs = nil }),
+		"negative gpu":      mutate(func(n *fleet.Node) { n.AvailableGPUIDs = []int{-1} }),
+		"repeated gpu":      mutate(func(n *fleet.Node) { n.AvailableGPUIDs = []int{0, 0} }),
+		"malformed iface":   mutate(func(n *fleet.Node) { n.Interface = "tail scale0" }),
+		"duplicate id":      append(inventory(), fleet.Node{ID: "five", IP: "100.64.0.99", Interface: "tailscale0", Role: "eval", AvailableGPUIDs: []int{0}}),
+		"duplicate address": append(inventory(), fleet.Node{ID: "nine", IP: "100.64.0.5", Interface: "tailscale0", Role: "eval", AvailableGPUIDs: []int{0}}),
 		"empty":             nil,
 	}
 	for name, nodes := range cases {
-		if err := cluster.ValidateInventory(nodes); err == nil {
+		if err := fleet.ValidateInventory(nodes); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
 }
 
 func TestFirstNodesAreEligibleByMeasurementNotByNumber(t *testing.T) {
-	nodes := []cluster.Node{{ID: "one", IP: "10.0.0.1", Interface: "eth0", Role: cluster.RoleTrain, AvailableGPUIDs: []int{0, 1}}}
-	if err := cluster.ValidateInventory(nodes); err != nil {
+	nodes := []fleet.Node{{ID: "one", IP: "10.0.0.1", Interface: "eth0", Role: fleet.RoleTrain, AvailableGPUIDs: []int{0, 1}}}
+	if err := fleet.ValidateInventory(nodes); err != nil {
 		t.Fatalf("node one refused by its number: %v", err)
 	}
 }
 
 func TestPlanRanksTheTrainGroupByNumeralAndSumsMeasuredCards(t *testing.T) {
-	plan, err := cluster.Plan(inventory())
+	plan, err := fleet.Plan(inventory())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestPlanRanksTheTrainGroupByNumeralAndSumsMeasuredCards(t *testing.T) {
 	if plan.World != 5 || plan.ExpectedCollectiveSum() != 10 {
 		t.Fatalf("world should follow measurement: world=%d sum=%d", plan.World, plan.ExpectedCollectiveSum())
 	}
-	if cluster.GPUList([]int{0, 1}) != "0,1" {
+	if fleet.GPUList([]int{0, 1}) != "0,1" {
 		t.Fatal("gpu list rendering changed")
 	}
 }
@@ -82,23 +82,23 @@ func TestPlanRanksTheTrainGroupByNumeralAndSumsMeasuredCards(t *testing.T) {
 type fakeWorker struct {
 	mu        sync.Mutex
 	refuse    map[string]bool
-	submitted map[string]cluster.Job
-	cancelled map[string]cluster.Job
+	submitted map[string]fleet.Job
+	cancelled map[string]fleet.Job
 	statused  []string
 }
 
 func newFake() *fakeWorker {
-	return &fakeWorker{refuse: map[string]bool{}, submitted: map[string]cluster.Job{}, cancelled: map[string]cluster.Job{}}
+	return &fakeWorker{refuse: map[string]bool{}, submitted: map[string]fleet.Job{}, cancelled: map[string]fleet.Job{}}
 }
 
-func (f *fakeWorker) Status(_ context.Context, n cluster.Node) ([]byte, error) {
+func (f *fakeWorker) Status(_ context.Context, n fleet.Node) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.statused = append(f.statused, n.ID)
 	return []byte(`{"state":"idle"}`), nil
 }
 
-func (f *fakeWorker) Submit(_ context.Context, n cluster.Node, job cluster.Job) ([]byte, error) {
+func (f *fakeWorker) Submit(_ context.Context, n fleet.Node, job fleet.Job) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.refuse[n.ID] {
@@ -108,7 +108,7 @@ func (f *fakeWorker) Submit(_ context.Context, n cluster.Node, job cluster.Job) 
 	return []byte(`{"accepted":true}`), nil
 }
 
-func (f *fakeWorker) Cancel(_ context.Context, n cluster.Node, job cluster.Job) ([]byte, error) {
+func (f *fakeWorker) Cancel(_ context.Context, n fleet.Node, job fleet.Job) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.cancelled[n.ID] = job
@@ -116,12 +116,12 @@ func (f *fakeWorker) Cancel(_ context.Context, n cluster.Node, job cluster.Job) 
 }
 
 func operator() security.Subject {
-	return security.Subject{ID: "paulo", Tenant: "tayi", Actions: []security.Action{cluster.FleetView, cluster.FleetDispatch}}
+	return security.Subject{ID: "paulo", Tenant: "tayi", Actions: []security.Action{fleet.FleetView, fleet.FleetDispatch}}
 }
 
 func TestStatusReadsEveryNodeOfTheRoleWithoutTakingTheQueue(t *testing.T) {
 	fake := newFake()
-	cp, err := cluster.NewControlPlane(inventory(), fake)
+	cp, err := fleet.NewControlPlane(inventory(), fake)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,12 +141,12 @@ func TestStatusReadsEveryNodeOfTheRoleWithoutTakingTheQueue(t *testing.T) {
 }
 
 func TestDispatchIsRefusedWithoutTheAction(t *testing.T) {
-	cp, err := cluster.NewControlPlane(inventory(), newFake())
+	cp, err := fleet.NewControlPlane(inventory(), newFake())
 	if err != nil {
 		t.Fatal(err)
 	}
-	viewer := security.Subject{ID: "viewer", Tenant: "tayi", Actions: []security.Action{cluster.FleetView}}
-	if _, err := cp.Dispatch(context.Background(), viewer, cluster.ActionDiagnostics, "all"); err == nil {
+	viewer := security.Subject{ID: "viewer", Tenant: "tayi", Actions: []security.Action{fleet.FleetView}}
+	if _, err := cp.Dispatch(context.Background(), viewer, fleet.ActionDiagnostics, "all"); err == nil {
 		t.Fatal("a subject without fleet.dispatch occupied the fleet")
 	}
 	if _, err := cp.Status(context.Background(), security.Subject{ID: "nobody", Tenant: "tayi"}, "all"); err == nil {
@@ -156,11 +156,11 @@ func TestDispatchIsRefusedWithoutTheAction(t *testing.T) {
 
 func TestCollectiveGoesOnlyToTrainNodesAndTheQueueIsOne(t *testing.T) {
 	fake := newFake()
-	cp, err := cluster.NewControlPlane(inventory(), fake)
+	cp, err := fleet.NewControlPlane(inventory(), fake)
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := cp.Dispatch(context.Background(), operator(), cluster.ActionCollective, "all")
+	run, err := cp.Dispatch(context.Background(), operator(), fleet.ActionCollective, "all")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestCollectiveGoesOnlyToTrainNodesAndTheQueueIsOne(t *testing.T) {
 			t.Errorf("node %s did not receive run %s", id, run.ID)
 		}
 	}
-	if _, err := cp.Dispatch(context.Background(), operator(), cluster.ActionDiagnostics, "all"); !errors.Is(err, cluster.ErrBusy) {
+	if _, err := cp.Dispatch(context.Background(), operator(), fleet.ActionDiagnostics, "all"); !errors.Is(err, fleet.ErrBusy) {
 		t.Fatalf("a second dispatch was not refused while one is in flight: %v", err)
 	}
 	if err := cp.Release("someone-else"); err == nil {
@@ -181,7 +181,7 @@ func TestCollectiveGoesOnlyToTrainNodesAndTheQueueIsOne(t *testing.T) {
 	if err := cp.Release(run.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cp.Dispatch(context.Background(), operator(), cluster.ActionDiagnostics, "eval"); err != nil {
+	if _, err := cp.Dispatch(context.Background(), operator(), fleet.ActionDiagnostics, "eval"); err != nil {
 		t.Fatalf("dispatch after release refused: %v", err)
 	}
 }
@@ -189,11 +189,11 @@ func TestCollectiveGoesOnlyToTrainNodesAndTheQueueIsOne(t *testing.T) {
 func TestPartialLaunchIsCancelledEverywhereAndFreesTheQueue(t *testing.T) {
 	fake := newFake()
 	fake.refuse["three"] = true
-	cp, err := cluster.NewControlPlane(inventory(), fake)
+	cp, err := fleet.NewControlPlane(inventory(), fake)
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := cp.Dispatch(context.Background(), operator(), cluster.ActionDiagnostics, cluster.RoleTrain)
+	run, err := cp.Dispatch(context.Background(), operator(), fleet.ActionDiagnostics, fleet.RoleTrain)
 	if err == nil || !strings.Contains(err.Error(), "partial launch") {
 		t.Fatalf("a partial launch was reported as success: %v", err)
 	}
@@ -208,13 +208,13 @@ func TestPartialLaunchIsCancelledEverywhereAndFreesTheQueue(t *testing.T) {
 }
 
 func TestControlPlaneRefusesBadInventoryAndNilWorker(t *testing.T) {
-	if _, err := cluster.NewControlPlane(nil, newFake()); err == nil {
+	if _, err := fleet.NewControlPlane(nil, newFake()); err == nil {
 		t.Fatal("empty inventory accepted")
 	}
-	if _, err := cluster.NewControlPlane(inventory(), nil); err == nil {
+	if _, err := fleet.NewControlPlane(inventory(), nil); err == nil {
 		t.Fatal("nil worker accepted")
 	}
-	if _, err := cluster.NewHTTPWorker(""); err == nil {
+	if _, err := fleet.NewHTTPWorker(""); err == nil {
 		t.Fatal("empty token accepted")
 	}
 }

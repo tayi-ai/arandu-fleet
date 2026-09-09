@@ -10,7 +10,7 @@ import (
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/hesape/database/model"
 
-	cluster "github.com/tayi-ai/arandu-cluster"
+	cluster "github.com/tayi-ai/arandu-fleet"
 )
 
 // The four properties this package exists to keep are checked here, and they

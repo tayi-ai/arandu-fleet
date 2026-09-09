@@ -1,4 +1,4 @@
-module github.com/tayi-ai/arandu-cluster
+module github.com/tayi-ai/arandu-fleet
 
 go 1.26
 

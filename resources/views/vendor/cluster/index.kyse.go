@@ -1,6 +1,6 @@
 //go:build kyse
 
-package cluster
+package fleet
 
 @go
 // IndexData is what a handler hands this page.

@@ -13,7 +13,7 @@ import (
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/hesape/database/migrations"
 
-	cluster "github.com/tayi-ai/arandu-cluster"
+	cluster "github.com/tayi-ai/arandu-fleet"
 )
 
 // These tests drive the module the way an application does: build it, register
