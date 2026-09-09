@@ -68,6 +68,54 @@ installing application's.
 cannot work fails where it is written instead of on the first request that
 needed it.
 
+### The convention
+
+This package knows nothing about your fleet. What a node may be called, what a
+role means, which networks are private and where a worker listens are all
+declared by the installation, in a `Convention`, and the package's job is to
+refuse whatever does not match it.
+
+| field | required | meaning |
+| --- | --- | --- |
+| `IDs` | yes | the identifiers a node may carry, in the order that orders the fleet. Rank zero of the training group is the first of these that carries the training role. |
+| `Roles` | yes | what a node may declare it is for. |
+| `TrainingRole` | yes | which of those roles the distributed group is built from. |
+| `Networks` | yes | the CIDR ranges an address may fall in. |
+| `DefaultPort` | yes | where a worker listens when the node does not say. |
+| `InterfacePattern` | no | what an interface name must match. Defaults to `^[a-zA-Z0-9_.-]{1,32}$`. |
+
+Every one of them is required for the same reason: the permissive answer has to
+be written down by whoever wants it. A convention that declares no network
+would accept an address from the public internet, and this package will not
+assume that is what somebody meant.
+
+`Compile` checks the convention once, before any node is read, so a malformed
+CIDR is reported as a mistake in the declaration rather than as a bad node.
+
+A fleet can be handed over as one document, which is what `ParseDeclaration`
+reads: the rules and what follows them, together, versioned as one thing.
+
+```json
+{
+  "convention": {
+    "ids": ["gpu-a", "gpu-b"],
+    "roles": ["gradient", "sampler"],
+    "training_role": "gradient",
+    "networks": ["192.168.10.0/24"],
+    "default_port": 9000
+  },
+  "nodes": [
+    {"id": "gpu-a", "private_ip": "192.168.10.1", "interface": "eno1",
+     "role": "gradient", "available_gpu_ids": [0, 1, 2, 3]},
+    {"id": "gpu-b", "private_ip": "192.168.10.2", "interface": "eno1",
+     "role": "sampler", "available_gpu_ids": [0], "port": 9100}
+  ]
+}
+```
+
+The token that authorizes occupying a card is not in there and must not be: it
+is configuration of the process, not of the fleet.
+
 ## Routes
 
 | method | path | name |
@@ -122,9 +170,10 @@ config.go      what the application passes in
 model.go       the entity, and what it may answer with
 policy.go      who may do what with a record
 service.go     the rules and authorized Model access
-inventory.go   the nodes of the fleet, and what makes one eligible
+inventory.go   the convention an installation declares, and what it refuses
 worker.go      the HTTP client that reaches a node's API
 control.go     the control plane: one run at a time, across the nodes
+declaration.go a whole fleet in one document: the convention and its nodes
 ```
 
 ## What is already correct, and has to stay that way

@@ -62,8 +62,8 @@ this one must prove about itself it proves in its own suite or nowhere.
 
 | | measured with |
 | --- | --- |
-| 8 Go files, one per role, all in one package at the root | `grep -l '^package fleet' *.go` |
-| 6 test files, 37 tests | `find tests -name '*_test.go'` · `go test -count=1 ./... -v \| grep -c '^--- PASS'` |
+| 9 Go files, one per role, all in one package at the root | `grep -l '^package fleet' *.go` |
+| 6 test files, 40 tests | `find tests -name '*_test.go'` · `go test -count=1 ./... -v \| grep -c '^--- PASS'` |
 | 3 routes | `grep -c 'r.Action' module.go` |
 | 5 actions the record policy answers about | `grep -cE '^\t[A-Za-z]+ security.Action = ' policy.go` |
 | 2 actions the control plane answers about | `grep -cE '^\t[A-Za-z]+ security.Action = ' control.go` |

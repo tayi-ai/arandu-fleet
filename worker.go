@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -39,9 +40,6 @@ type Worker interface {
 	Cancel(ctx context.Context, n Node, job Job) ([]byte, error)
 }
 
-// WorkerPort is where every node listens on its private address.
-const WorkerPort = "8787"
-
 // maxAnswer caps what is read from a node: a worker answers in a few hundred
 // bytes, and a node that answers more is a node something else is speaking for.
 const maxAnswer = 8192
@@ -50,16 +48,23 @@ const maxAnswer = 8192
 // token. The token is read from the application's configuration and never
 // written anywhere by this package.
 type HTTPWorker struct {
-	Token  string
+	Token string
+	// Port resolves where one node's worker listens. It is a function of the
+	// node rather than a constant, so an installation whose nodes do not agree
+	// on a port is describable instead of unsupported.
+	Port   func(Node) int
 	Client *http.Client
 }
 
 // NewHTTPWorker returns a client with the timeout the node API is designed for.
-func NewHTTPWorker(token string) (*HTTPWorker, error) {
+func NewHTTPWorker(token string, port func(Node) int) (*HTTPWorker, error) {
 	if token == "" {
 		return nil, errors.New("fleet: the worker token is empty; refusing to address the fleet without one")
 	}
-	return &HTTPWorker{Token: token, Client: &http.Client{Timeout: 15 * time.Second}}, nil
+	if port == nil {
+		return nil, errors.New("fleet: NewHTTPWorker needs a port resolver; Convention.PortOf is the one an installation already declares")
+	}
+	return &HTTPWorker{Token: token, Port: port, Client: &http.Client{Timeout: 15 * time.Second}}, nil
 }
 
 func (w *HTTPWorker) Status(ctx context.Context, n Node) ([]byte, error) {
@@ -83,7 +88,7 @@ func (w *HTTPWorker) Cancel(ctx context.Context, n Node, job Job) ([]byte, error
 }
 
 func (w *HTTPWorker) call(ctx context.Context, n Node, method, path string, body []byte) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, method, "http://"+net.JoinHostPort(n.IP, WorkerPort)+path, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, method, "http://"+net.JoinHostPort(n.IP, strconv.Itoa(w.Port(n)))+path, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

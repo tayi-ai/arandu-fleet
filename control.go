@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -68,10 +69,11 @@ var ErrBusy = errors.New("fleet: a run is already in flight; the cluster is a qu
 
 // ControlPlane coordinates the fleet from the inventory.
 type ControlPlane struct {
-	nodes  []Node
-	worker Worker
-	policy ControlPolicy
-	now    func() time.Time
+	convention Convention
+	nodes      []Node
+	worker     Worker
+	policy     ControlPolicy
+	now        func() time.Time
 
 	mu     sync.Mutex
 	active *Run
@@ -79,21 +81,28 @@ type ControlPlane struct {
 
 // NewControlPlane refuses an inventory the fleet must not be addressed with,
 // and a nil worker.
-func NewControlPlane(nodes []Node, worker Worker) (*ControlPlane, error) {
-	if err := ValidateInventory(nodes); err != nil {
+func NewControlPlane(convention Convention, nodes []Node, worker Worker) (*ControlPlane, error) {
+	convention, err := convention.Compile()
+	if err != nil {
+		return nil, err
+	}
+	if err := ValidateInventory(convention, nodes); err != nil {
 		return nil, err
 	}
 	if worker == nil {
 		return nil, errors.New("fleet: NewControlPlane needs a worker client")
 	}
-	return &ControlPlane{nodes: ByNumeral(nodes), worker: worker, now: time.Now}, nil
+	return &ControlPlane{convention: convention, nodes: InDeclaredOrder(convention, nodes), worker: worker, now: time.Now}, nil
 }
+
+// Convention is what this control plane validates its inventory against.
+func (c *ControlPlane) Convention() Convention { return c.convention }
 
 // Nodes returns the inventory in numeral order.
 func (c *ControlPlane) Nodes() []Node { return append([]Node(nil), c.nodes...) }
 
 // Plan returns the training group the inventory yields.
-func (c *ControlPlane) Plan() (TrainingPlan, error) { return Plan(c.nodes) }
+func (c *ControlPlane) Plan() (TrainingPlan, error) { return Plan(c.convention, c.nodes) }
 
 // Status reads every node of the role, in parallel, and returns what each
 // answered. Reading never occupies a card and never needs the queue.
@@ -122,7 +131,7 @@ func (c *ControlPlane) Dispatch(ctx context.Context, actor security.Subject, act
 		return Run{}, fmt.Errorf("fleet: %q is not an action the fleet runs; the actions are %s and %s", action, ActionDiagnostics, ActionCollective)
 	}
 	if action == ActionCollective {
-		role = RoleTrain
+		role = c.convention.TrainingRole
 	}
 	if _, err := security.Authorize(ctx, c.policy, actor, FleetDispatch, Run{Action: action, Role: role}); err != nil {
 		return Run{}, err
@@ -178,8 +187,8 @@ func (c *ControlPlane) InFlight() (Run, bool) {
 }
 
 func (c *ControlPlane) selectNodes(role string) ([]Node, error) {
-	if role != "all" && !roles[role] {
-		return nil, fmt.Errorf("fleet: role must be all, train, rollout or eval, not %q", role)
+	if role != "all" && !c.convention.IsRole(role) {
+		return nil, fmt.Errorf("fleet: role must be all or one the convention declares (%s), not %q", strings.Join(c.convention.Roles, ", "), role)
 	}
 	selected := WithRole(c.nodes, role)
 	if len(selected) == 0 {
