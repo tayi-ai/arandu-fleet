@@ -82,6 +82,12 @@ type Queue struct {
 	pending   []Job
 	leased    map[string]*Lease
 	completed map[string]Outcome
+	// reported is the order outcomes arrived in, so the oldest can be dropped.
+	// A control plane that runs for a month holds every outcome of that month
+	// otherwise, and the queue is in memory: nothing evicts it and nothing
+	// reports that it grew. The bound is what makes "in memory" a decision
+	// rather than a leak.
+	reported []string
 	// Lease is how long a claim survives without a report.
 	LeaseFor time.Duration
 	// Now is the clock, so a test can move it.
@@ -102,6 +108,19 @@ func NewQueue(leaseFor time.Duration) *Queue {
 		Now:       time.Now,
 	}
 }
+
+// keptOutcomes bounds what Outcome can still answer for.
+//
+// A fleet of twenty-one nodes reporting a job each is twenty-one entries per
+// round, so this is roughly the last five hundred rounds -- far longer than
+// anybody waits before reading a result, and small enough that the queue's
+// memory does not depend on how long the control plane has been up.
+//
+// Asking for an outcome older than this reads as not reported, which is the
+// same answer a restarted control plane gives. A caller that needs a result to
+// survive either has to write it down, and writing it down means a table,
+// which is the application's decision and not this module's.
+const keptOutcomes = 10000
 
 // ErrNoWork is returned when the queue has nothing for a node.
 //
@@ -183,7 +202,14 @@ func (q *Queue) Report(outcome Outcome) error {
 		return fmt.Errorf("fleet: run %s is leased by %s, not by %s", outcome.JobID, lease.Node, outcome.Node)
 	}
 	delete(q.leased, outcome.JobID)
+	if _, seen := q.completed[outcome.JobID]; !seen {
+		q.reported = append(q.reported, outcome.JobID)
+	}
 	q.completed[outcome.JobID] = outcome
+	for len(q.reported) > keptOutcomes {
+		delete(q.completed, q.reported[0])
+		q.reported = q.reported[1:]
+	}
 	return nil
 }
 
