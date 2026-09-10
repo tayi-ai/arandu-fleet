@@ -393,11 +393,24 @@ func (l *Leaser) Work(ctx context.Context, agent *Agent, each func(Lease, Outcom
 		}
 		outcome := agent.RunToCompletion(ctx, lease.Job)
 		outcome.JobID = lease.Job.ID
-		if err := l.Report(ctx, outcome); err != nil && each == nil {
-			return err
+		reported := l.Report(ctx, outcome)
+		if reported != nil {
+			// A report that did not arrive is the worst of the three outcomes and
+			// used to be the quietest: the job ran, the control plane never heard,
+			// the lease expired, and the fleet did the work twice. It was swallowed
+			// whenever a callback was passed, which made the error handling depend
+			// on whether the caller wanted to watch -- an arbitrary coupling.
+			//
+			// It is said out loud now, through the same callback that carries every
+			// other outcome, and the loop continues for the reason an unreachable
+			// control plane is a reason to wait rather than to stop.
+			outcome.State = "unreported"
+			outcome.Detail = strings.TrimSpace(outcome.Detail + " | report failed: " + reported.Error())
 		}
 		if each != nil {
 			each(lease, outcome)
+		} else if reported != nil {
+			return reported
 		}
 	}
 }

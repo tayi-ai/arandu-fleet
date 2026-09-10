@@ -1,6 +1,7 @@
 package unit_test
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -405,5 +406,57 @@ func TestANodeThatAlreadyHasTheRightBytesFetchesNothing(t *testing.T) {
 	}
 	if _, err := leaser.Fetch(t.Context(), into, fleet.Material{Name: "corpus", SHA256: digest, Bytes: int64(len(body))}); err != nil {
 		t.Fatalf("a node holding the right bytes tried to fetch anyway: %v", err)
+	}
+}
+
+// A report that never arrived is the worst outcome of the three and used to be
+// the quietest.
+//
+// The node ran the job, the control plane never heard, the lease expired, and
+// the fleet did the work a second time -- with nothing anywhere saying so. The
+// error was returned only when no callback had been passed, which made whether
+// a failure was visible depend on whether the caller wanted to watch.
+func TestAReportThatDidNotArriveIsSaidOutLoud(t *testing.T) {
+	queue := queueWith(t, "run-1")
+	handler, err := fleet.LeaseHandler(queue, "a-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A control plane that hands out work and then refuses every report. A
+	// restarted control plane does exactly this: it forgot the lease.
+	refusing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/report" {
+			http.Error(w, "no such lease", http.StatusConflict)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	}))
+	defer refusing.Close()
+
+	leaser, err := fleet.NewLeaser(refusing.URL, "five", "a-token", nil, time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent := &fleet.Agent{Program: echo(t), Token: "a-token", LogDir: t.TempDir()}
+
+	ctx, stop := context.WithCancel(t.Context())
+	var seen fleet.Outcome
+	var count int
+	err = leaser.Work(ctx, agent, func(_ fleet.Lease, outcome fleet.Outcome) {
+		count++
+		seen = outcome
+		stop()
+	})
+	if err != nil {
+		t.Fatalf("the loop stopped on a failed report instead of carrying on: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("the callback fired %d times", count)
+	}
+	if seen.State != "unreported" {
+		t.Fatalf("a job whose report was refused is recorded as %q", seen.State)
+	}
+	if !strings.Contains(seen.Detail, "report failed") {
+		t.Fatalf("the outcome does not say why it was not reported: %q", seen.Detail)
 	}
 }
