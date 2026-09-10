@@ -10,8 +10,9 @@ framework = ">= 0.46"
 profiles = ["conventional", "performance"]
 
 [permissions]
-# worker.go calls the node API over HTTP, so requests do leave the process:
-# whoever installs this is running something that reaches the private network.
+# worker.go calls the node API over HTTP and lease.go dials the control plane, so
+# requests do leave the process: whoever installs this is running something that
+# reaches the private network.
 network = true
 # agent.go writes one log and one record per run, and receives artifacts under
 # a root the host declares. A node that ran work and kept nothing is a node

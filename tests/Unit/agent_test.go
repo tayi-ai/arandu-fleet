@@ -109,7 +109,7 @@ func TestARunIDThatCouldNameAPathIsRefused(t *testing.T) {
 }
 
 func TestTheNodeHoldsOneRunAtATime(t *testing.T) {
-	_, server := agent(t)
+	a, server := agent(t)
 	if got := call(t, server, "POST", "/jobs", bearerToken, `{"id":"first","action":"sleep"}`).StatusCode; got != http.StatusAccepted {
 		t.Fatalf("the first submission answered %d, want 202", got)
 	}
@@ -122,6 +122,11 @@ func TestTheNodeHoldsOneRunAtATime(t *testing.T) {
 	if got := call(t, server, "POST", "/cancel", bearerToken, `{"id":"first","action":"sleep"}`).StatusCode; got != http.StatusAccepted {
 		t.Fatalf("cancelling the current run answered %d, want 202", got)
 	}
+	// Cancelling is asynchronous: the signal is sent and the reaper closes the
+	// log afterwards. Ending the test here leaves the temporary directory being
+	// written to while the harness removes it, which fails the run for a reason
+	// that has nothing to do with what it was proving.
+	settle(t, a, "first")
 }
 
 func TestAReusedRunIDIsRefusedRatherThanOverwritingItsLog(t *testing.T) {

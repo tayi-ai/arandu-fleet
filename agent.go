@@ -1,6 +1,7 @@
 package fleet
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -354,4 +355,84 @@ func (s *ArtifactStore) write(w stdhttp.ResponseWriter, r *stdhttp.Request, targ
 		return 0, "", err
 	}
 	return written, hex.EncodeToString(sum.Sum(nil)), nil
+}
+
+// RunToCompletion runs one job and waits for it, which is what a node fetching
+// its own work needs.
+//
+// The HTTP surface answers 202 and leaves the caller to poll, because a control
+// plane dispatching to twenty-one nodes cannot block on each. A node running its
+// own claimed job has nobody to answer to until it is finished, and reporting
+// before the job ends would report an intention.
+//
+// It never returns an error. Everything that can go wrong here is something the
+// control plane has to be told about rather than something the loop should stop
+// for, so a refusal from the Program and a non-zero exit arrive the same way: as
+// an outcome that says what happened.
+func (a *Agent) RunToCompletion(ctx context.Context, job Job) Outcome {
+	outcome := Outcome{JobID: job.ID, State: StateFailed, Exit: -1}
+	if !validRunID.MatchString(job.ID) {
+		outcome.Detail = "the run id is not one this agent will create a log for"
+		return outcome
+	}
+	command, err := a.Program.Command(job)
+	if err != nil {
+		outcome.Detail = err.Error()
+		return outcome
+	}
+
+	a.mu.Lock()
+	if a.current.State == StateRunning {
+		a.mu.Unlock()
+		outcome.Detail = "this node is already running " + a.current.ID
+		return outcome
+	}
+	log, err := os.OpenFile(filepath.Join(a.LogDir, job.ID+".log"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		a.mu.Unlock()
+		outcome.Detail = "cannot create the log for this run id; it has been used before"
+		return outcome
+	}
+	process := exec.Command(command.Path, command.Args...)
+	process.Stdout, process.Stderr = log, log
+	process.Env, process.Dir = command.Env, command.Dir
+	detach(process)
+	if err := process.Start(); err != nil {
+		log.Close()
+		a.mu.Unlock()
+		outcome.Detail = err.Error()
+		return outcome
+	}
+	a.current = NodeRun{ID: job.ID, Action: job.Action, State: StateRunning, Exit: -1}
+	a.proc = process
+	a.mu.Unlock()
+
+	// The context cancels the job rather than abandoning it. A loop that returned
+	// on cancellation would leave the process holding the cards, which is the
+	// failure this whole protocol exists to stop happening by accident.
+	done := make(chan error, 1)
+	go func() { done <- process.Wait() }()
+	var waitErr error
+	select {
+	case waitErr = <-done:
+	case <-ctx.Done():
+		_ = killGroup(process)
+		waitErr = <-done
+	}
+	log.Close()
+
+	a.mu.Lock()
+	a.current.State, a.current.Exit = StateSucceeded, 0
+	if waitErr != nil {
+		a.current.State = StateFailed
+		if process.ProcessState != nil {
+			a.current.Exit = process.ProcessState.ExitCode()
+		}
+		outcome.Detail = waitErr.Error()
+	}
+	outcome.State, outcome.Exit = a.current.State, a.current.Exit
+	record, _ := json.Marshal(a.current)
+	os.WriteFile(filepath.Join(a.LogDir, job.ID+".json"), record, 0o600)
+	a.mu.Unlock()
+	return outcome
 }
