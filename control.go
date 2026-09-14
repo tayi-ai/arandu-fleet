@@ -150,6 +150,24 @@ func (c *ControlPlane) ResultNode(ctx context.Context, actor security.Subject, j
 	return reader.Result(ctx, selected[0], job)
 }
 
+// PutArtifactNode delivers one verified artifact to an exact declared node.
+// It does not reserve the fleet because delivery does not start a process or
+// occupy a GPU; the job that consumes the artifact is fenced separately.
+func (c *ControlPlane) PutArtifactNode(ctx context.Context, actor security.Subject, nodeID string, artifact Artifact) ([]byte, error) {
+	if _, err := security.Authorize(ctx, c.policy, actor, FleetDispatch, Run{Action: "artifact.put"}); err != nil {
+		return nil, err
+	}
+	selected, err := c.selectNodeIDs([]string{nodeID})
+	if err != nil {
+		return nil, err
+	}
+	uploader, ok := c.worker.(ArtifactWorker)
+	if !ok {
+		return nil, errors.New("fleet: the configured worker transport does not deliver artifacts")
+	}
+	return uploader.PutArtifact(ctx, selected[0], artifact)
+}
+
 // Dispatch starts one action on every node of the role.
 //
 // Every submission is sent in parallel. If any node refuses, the run id is

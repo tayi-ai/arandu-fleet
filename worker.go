@@ -3,12 +3,16 @@ package fleet
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"path/filepath"
 	"strconv"
 	"time"
 )
@@ -60,6 +64,21 @@ type Worker interface {
 type ResultWorker interface {
 	Worker
 	Result(ctx context.Context, n Node, job Job) ([]byte, error)
+}
+
+// Artifact is one immutable file delivered to a node before a job uses it.
+type Artifact struct {
+	Directory string
+	Name      string
+	SHA256    string
+	Body      []byte
+}
+
+// ArtifactWorker is the optional extension implemented by transports that can
+// deliver a verified artifact to a node's bounded artifact store.
+type ArtifactWorker interface {
+	Worker
+	PutArtifact(ctx context.Context, n Node, artifact Artifact) ([]byte, error)
 }
 
 // maxAnswer caps what is read from a node: a worker answers in a few hundred
@@ -117,6 +136,23 @@ func (w *HTTPWorker) Cancel(ctx context.Context, n Node, job Job) ([]byte, error
 func (w *HTTPWorker) Result(ctx context.Context, n Node, job Job) ([]byte, error) {
 	path := "/jobs/" + job.ID + "/result?generation=" + strconv.FormatUint(job.Generation, 10)
 	return w.callLimit(ctx, n, http.MethodGet, path, nil, maxResultAnswer)
+}
+
+// PutArtifact sends one immutable file to the node and requires its declared
+// digest to match before any network request is made.
+func (w *HTTPWorker) PutArtifact(ctx context.Context, n Node, artifact Artifact) ([]byte, error) {
+	if !validArtifactDir.MatchString(artifact.Directory) || artifact.Name == "" || artifact.Name != filepath.Base(artifact.Name) {
+		return nil, errors.New("fleet: artifact directory and name have to be simple")
+	}
+	if !validDigest.MatchString(artifact.SHA256) {
+		return nil, errors.New("fleet: artifact sha256 is absent or malformed")
+	}
+	sum := sha256.Sum256(artifact.Body)
+	if got := hex.EncodeToString(sum[:]); got != artifact.SHA256 {
+		return nil, fmt.Errorf("fleet: artifact digest is %s, declared %s", got, artifact.SHA256)
+	}
+	query := url.Values{"dir": {artifact.Directory}, "name": {artifact.Name}, "sha256": {artifact.SHA256}}
+	return w.callLimit(ctx, n, http.MethodPost, "/artifacts?"+query.Encode(), artifact.Body, maxAnswer)
 }
 
 func (w *HTTPWorker) call(ctx context.Context, n Node, method, path string, body []byte) ([]byte, error) {

@@ -109,10 +109,11 @@ type fakeWorker struct {
 	submitted map[string]fleet.Job
 	cancelled map[string]fleet.Job
 	statused  []string
+	uploaded  map[string]fleet.Artifact
 }
 
 func newFake() *fakeWorker {
-	return &fakeWorker{refuse: map[string]bool{}, submitted: map[string]fleet.Job{}, cancelled: map[string]fleet.Job{}}
+	return &fakeWorker{refuse: map[string]bool{}, submitted: map[string]fleet.Job{}, cancelled: map[string]fleet.Job{}, uploaded: map[string]fleet.Artifact{}}
 }
 
 func (f *fakeWorker) Status(_ context.Context, n fleet.Node) ([]byte, error) {
@@ -143,6 +144,13 @@ func (f *fakeWorker) Result(_ context.Context, n fleet.Node, job fleet.Job) ([]b
 	return []byte(`{"run":{"id":"` + job.ID + `","state":"succeeded"},"output":"ok"}`), nil
 }
 
+func (f *fakeWorker) PutArtifact(_ context.Context, n fleet.Node, artifact fleet.Artifact) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.uploaded[n.ID] = artifact
+	return []byte(`{"sha256":"` + artifact.SHA256 + `"}`), nil
+}
+
 func operator() security.Subject {
 	return security.Subject{ID: "paulo", Tenant: "tayi", Actions: []security.Action{fleet.FleetView, fleet.FleetDispatch}}
 }
@@ -165,6 +173,24 @@ func TestStatusReadsEveryNodeOfTheRoleWithoutTakingTheQueue(t *testing.T) {
 	}
 	if _, err := cp.Status(context.Background(), operator(), "serve"); err == nil {
 		t.Fatal("an unknown role was accepted")
+	}
+}
+
+func TestPutArtifactTargetsOneDeclaredNodeWithoutTakingTheQueue(t *testing.T) {
+	fake := newFake()
+	cp, err := fleet.NewControlPlane(tayiDeclared(), inventory(), fake)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact := fleet.Artifact{Directory: "step-1", Name: "adapter.gguf", SHA256: strings.Repeat("a", 64), Body: []byte("adapter")}
+	if _, err := cp.PutArtifactNode(context.Background(), operator(), "one", artifact); err != nil {
+		t.Fatal(err)
+	}
+	if got := fake.uploaded["one"]; got.Name != artifact.Name || len(fake.uploaded) != 1 {
+		t.Fatalf("artifact delivery was not confined to one: %+v", fake.uploaded)
+	}
+	if _, busy := cp.InFlight(); busy {
+		t.Fatal("artifact delivery occupied the GPU queue")
 	}
 }
 
