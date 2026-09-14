@@ -25,3 +25,24 @@ func killGroup(c *exec.Cmd) error {
 	}
 	return syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
 }
+
+func terminateGroup(c *exec.Cmd) error {
+	if c == nil || c.Process == nil {
+		return errors.New("fleet: there is no process to signal")
+	}
+	return syscall.Kill(-c.Process.Pid, syscall.SIGTERM)
+}
+
+func terminateProcessGroup(pid int) error {
+	if pid <= 0 {
+		return errors.New("fleet: there is no persisted process to signal")
+	}
+	return syscall.Kill(-pid, syscall.SIGTERM)
+}
+
+func killProcessGroup(pid int) error {
+	if pid <= 0 {
+		return errors.New("fleet: there is no persisted process to signal")
+	}
+	return syscall.Kill(-pid, syscall.SIGKILL)
+}

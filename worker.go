@@ -29,6 +29,12 @@ const (
 type Job struct {
 	ID     string `json:"id"`
 	Action string `json:"action"`
+	// Generation fences delayed commands from an older owner of the run.
+	Generation uint64 `json:"generation,omitempty"`
+	// ContractVersion identifies the application vocabulary that made the job.
+	ContractVersion string `json:"contract_version,omitempty"`
+	// RuntimeDigest identifies the admitted native release for this job.
+	RuntimeDigest string `json:"runtime_digest,omitempty"`
 	// Request stays raw because its shape belongs to the installation's Program.
 	// A module that parsed it would have to know every action anybody ever adds,
 	// and the vocabulary is exactly what this module refuses to own.
@@ -49,9 +55,21 @@ type Worker interface {
 	Cancel(ctx context.Context, n Node, job Job) ([]byte, error)
 }
 
+// ResultWorker is the optional extension a worker implements when the
+// installation persists process output for later retrieval.
+type ResultWorker interface {
+	Worker
+	Result(ctx context.Context, n Node, job Job) ([]byte, error)
+}
+
 // maxAnswer caps what is read from a node: a worker answers in a few hundred
 // bytes, and a node that answers more is a node something else is speaking for.
 const maxAnswer = 8192
+
+// JSON escaping can expand an 8 MiB native log. Keep the bounded response
+// large enough for the complete escaped payload without opening an unlimited
+// read from a worker.
+const maxResultAnswer = (16 << 20) + (64 << 10)
 
 // HTTPWorker talks to the node API over the private network with a bearer
 // token. The token is read from the application's configuration and never
@@ -96,7 +114,16 @@ func (w *HTTPWorker) Cancel(ctx context.Context, n Node, job Job) ([]byte, error
 	return w.call(ctx, n, http.MethodPost, "/cancel", body)
 }
 
+func (w *HTTPWorker) Result(ctx context.Context, n Node, job Job) ([]byte, error) {
+	path := "/jobs/" + job.ID + "/result?generation=" + strconv.FormatUint(job.Generation, 10)
+	return w.callLimit(ctx, n, http.MethodGet, path, nil, maxResultAnswer)
+}
+
 func (w *HTTPWorker) call(ctx context.Context, n Node, method, path string, body []byte) ([]byte, error) {
+	return w.callLimit(ctx, n, method, path, body, maxAnswer)
+}
+
+func (w *HTTPWorker) callLimit(ctx context.Context, n Node, method, path string, body []byte, limit int64) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, method, "http://"+net.JoinHostPort(n.IP, strconv.Itoa(w.Port(n)))+path, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -108,7 +135,7 @@ func (w *HTTPWorker) call(ctx context.Context, n Node, method, path string, body
 		return nil, fmt.Errorf("fleet: node %s: %w", n.ID, err)
 	}
 	defer res.Body.Close()
-	answer, err := io.ReadAll(io.LimitReader(res.Body, maxAnswer))
+	answer, err := io.ReadAll(io.LimitReader(res.Body, limit))
 	if err != nil {
 		return nil, err
 	}

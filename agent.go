@@ -14,8 +14,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Agent is the node half of the worker protocol: what runs on a machine that
@@ -54,10 +56,13 @@ type Agent struct {
 // The states a run passes through. A node holds one run at a time, so these are
 // also the states of the node.
 const (
-	StateIdle      = "idle"
-	StateRunning   = "running"
-	StateSucceeded = "succeeded"
-	StateFailed    = "failed"
+	StateIdle       = "idle"
+	StateRunning    = "running"
+	StateCancelling = "cancelling"
+	StateCancelled  = "cancelled"
+	StateUnknown    = "unknown"
+	StateSucceeded  = "succeeded"
+	StateFailed     = "failed"
 )
 
 // Command is what a Program decided a job executes.
@@ -92,10 +97,18 @@ func (f ProgramFunc) Command(a Job) (Command, error) { return f(a) }
 // which is a dispatch across the whole fleet. Exit is -1 while it runs, so a
 // reader never mistakes a running job for one that ended cleanly.
 type NodeRun struct {
-	ID     string `json:"id"`
-	Action string `json:"action"`
-	State  string `json:"state"`
-	Exit   int    `json:"exit"`
+	ID              string    `json:"id"`
+	Action          string    `json:"action"`
+	State           string    `json:"state"`
+	Exit            int       `json:"exit"`
+	Generation      uint64    `json:"generation,omitempty"`
+	ContractVersion string    `json:"contract_version,omitempty"`
+	RuntimeDigest   string    `json:"runtime_digest,omitempty"`
+	RequestDigest   string    `json:"request_digest,omitempty"`
+	PID             int       `json:"pid,omitempty"`
+	ProcessStart    string    `json:"process_start,omitempty"`
+	Executable      string    `json:"executable,omitempty"`
+	StartedAt       time.Time `json:"started_at,omitempty"`
 }
 
 // validRunID is what a run id may look like. It admits no separator and no dot,
@@ -105,6 +118,8 @@ var validRunID = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 // maxJob caps a submission. A job is a few hundred bytes, and a body larger
 // than this is not one.
 const maxJob = 8192
+
+const maxResultLog = 8 << 20
 
 // NewAgent returns an agent ready to serve, or refuses to build one that could
 // not honor its guards.
@@ -121,7 +136,11 @@ func NewAgent(token string, program Program, logDir string) (*Agent, error) {
 	if err := os.MkdirAll(logDir, 0o700); err != nil {
 		return nil, err
 	}
-	return &Agent{Program: program, Token: token, LogDir: logDir, current: NodeRun{State: StateIdle, Exit: -1}}, nil
+	a := &Agent{Program: program, Token: token, LogDir: logDir, current: NodeRun{State: StateIdle, Exit: -1}}
+	if err := a.restore(); err != nil {
+		return nil, err
+	}
+	return a, nil
 }
 
 // Handler is the node API. The host binds it to the private address it measured
@@ -130,6 +149,7 @@ func (a *Agent) Handler() stdhttp.Handler {
 	mux := stdhttp.NewServeMux()
 	mux.HandleFunc("GET /status", a.status)
 	mux.HandleFunc("POST /jobs", a.submit)
+	mux.HandleFunc("GET /jobs/{id}/result", a.result)
 	mux.HandleFunc("POST /cancel", a.cancel)
 	mux.HandleFunc("POST /artifacts", a.receive)
 	return a.authorized(mux)
@@ -140,6 +160,7 @@ func (a *Agent) Handler() stdhttp.Handler {
 func (a *Agent) Current() NodeRun {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.reconcileLocked()
 	return a.current
 }
 
@@ -156,6 +177,7 @@ func (a *Agent) authorized(next stdhttp.Handler) stdhttp.Handler {
 
 func (a *Agent) status(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	a.mu.Lock()
+	a.reconcileLocked()
 	answer := map[string]any{"job": a.current}
 	a.mu.Unlock()
 	for k, v := range a.Identity {
@@ -171,15 +193,23 @@ func (a *Agent) submit(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	if !ok {
 		return
 	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.reconcileLocked()
+	fingerprint := requestDigest(job)
+	if (a.current.State == StateRunning || a.current.State == StateCancelling) &&
+		a.current.ID == job.ID && a.current.Generation == job.Generation &&
+		a.current.Action == job.Action && a.current.RequestDigest == fingerprint {
+		answerJSON(w, stdhttp.StatusAccepted, a.current)
+		return
+	}
+	if a.current.State == StateRunning || a.current.State == StateCancelling {
+		stdhttp.Error(w, "busy", stdhttp.StatusConflict)
+		return
+	}
 	command, err := a.Program.Command(job)
 	if err != nil {
 		stdhttp.Error(w, err.Error(), stdhttp.StatusUnprocessableEntity)
-		return
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.current.State == StateRunning {
-		stdhttp.Error(w, "busy", stdhttp.StatusConflict)
 		return
 	}
 	// O_EXCL refuses a reused run id rather than overwriting the log of the run
@@ -199,8 +229,22 @@ func (a *Agent) submit(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		stdhttp.Error(w, err.Error(), stdhttp.StatusInternalServerError)
 		return
 	}
-	a.current = NodeRun{ID: job.ID, Action: job.Action, State: StateRunning, Exit: -1}
+	identity, _ := runningProcessIdentity(process.Process.Pid, command.Path)
+	a.current = NodeRun{
+		ID: job.ID, Action: job.Action, State: StateRunning, Exit: -1,
+		Generation: job.Generation, ContractVersion: job.ContractVersion,
+		RuntimeDigest: job.RuntimeDigest, RequestDigest: fingerprint,
+		PID: process.Process.Pid, ProcessStart: identity.Start, Executable: identity.Executable,
+		StartedAt: time.Now().UTC(),
+	}
 	a.proc = process
+	if err := a.persistLocked(); err != nil {
+		_ = killGroup(process)
+		_ = process.Wait()
+		log.Close()
+		stdhttp.Error(w, "cannot persist the process identity", stdhttp.StatusInternalServerError)
+		return
+	}
 	go a.reap(process, log, job.ID)
 	answerJSON(w, stdhttp.StatusAccepted, a.current)
 }
@@ -213,12 +257,19 @@ func (a *Agent) reap(process *exec.Cmd, log *os.File, id string) {
 	log.Close()
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	prior := a.current.State
 	a.current.State, a.current.Exit = StateSucceeded, 0
 	if err != nil {
-		a.current.State, a.current.Exit = StateFailed, process.ProcessState.ExitCode()
+		if prior == StateCancelling {
+			a.current.State = StateCancelled
+		} else {
+			a.current.State = StateFailed
+		}
+		a.current.Exit = process.ProcessState.ExitCode()
 	}
-	record, _ := json.Marshal(a.current)
-	os.WriteFile(filepath.Join(a.LogDir, id+".json"), record, 0o600)
+	a.proc = nil
+	_ = a.persistLocked()
+	_ = a.persistRecordLocked(id)
 }
 
 func (a *Agent) cancel(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -228,18 +279,176 @@ func (a *Agent) cancel(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.current.ID != job.ID || a.current.State != StateRunning {
+	a.reconcileLocked()
+	if a.current.ID == job.ID && a.current.Generation == job.Generation &&
+		(a.current.State == StateCancelling || a.current.State == StateCancelled) {
+		answerJSON(w, stdhttp.StatusAccepted, map[string]string{"state": a.current.State})
+		return
+	}
+	if a.current.ID != job.ID || a.current.Generation != job.Generation || a.current.State != StateRunning {
 		stdhttp.Error(w, "no matching active job", stdhttp.StatusConflict)
 		return
 	}
 	// The whole group, not the process: a launcher that spawned one worker per
 	// card leaves those workers holding the cards when only its own pid is
 	// signalled, and the next run finds the memory already taken.
-	if err := killGroup(a.proc); err != nil {
+	var err error
+	if a.proc != nil {
+		err = terminateGroup(a.proc)
+	} else {
+		err = terminateProcessGroup(a.current.PID)
+	}
+	if err != nil {
 		stdhttp.Error(w, err.Error(), stdhttp.StatusInternalServerError)
 		return
 	}
+	a.current.State = StateCancelling
+	persistErr := a.persistLocked()
+	pending := a.current
+	go a.enforceCancellation(pending)
+	if persistErr != nil {
+		stdhttp.Error(w, "cancellation was sent but its state could not be persisted", stdhttp.StatusInternalServerError)
+		return
+	}
 	answerJSON(w, stdhttp.StatusAccepted, map[string]string{"state": "cancelling"})
+}
+
+func (a *Agent) enforceCancellation(run NodeRun) {
+	timer := time.NewTimer(30 * time.Second)
+	defer timer.Stop()
+	<-timer.C
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.reconcileLocked()
+	if a.current.ID != run.ID || a.current.Generation != run.Generation || a.current.State != StateCancelling {
+		return
+	}
+	identity, alive := runningProcessIdentity(run.PID, run.Executable)
+	if !alive || identity.Start != run.ProcessStart || identity.Executable != run.Executable {
+		return
+	}
+	if a.proc != nil {
+		_ = killGroup(a.proc)
+		return
+	}
+	_ = killProcessGroup(run.PID)
+}
+
+// JobResult is the final process record and the exact bytes written to its log.
+type JobResult struct {
+	Run          NodeRun `json:"run"`
+	Output       string  `json:"output"`
+	OutputDigest string  `json:"output_digest"`
+}
+
+func (a *Agent) result(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	id := r.PathValue("id")
+	generation, err := strconv.ParseUint(r.URL.Query().Get("generation"), 10, 64)
+	if !validRunID.MatchString(id) || err != nil {
+		stdhttp.Error(w, "invalid result identity", stdhttp.StatusBadRequest)
+		return
+	}
+	a.mu.Lock()
+	a.reconcileLocked()
+	run := a.current
+	a.mu.Unlock()
+	if run.ID != id || run.Generation != generation {
+		body, readErr := os.ReadFile(filepath.Join(a.LogDir, id+".json"))
+		if readErr != nil || json.Unmarshal(body, &run) != nil || run.ID != id || run.Generation != generation {
+			stdhttp.Error(w, "no matching result", stdhttp.StatusNotFound)
+			return
+		}
+	}
+	if run.State == StateRunning || run.State == StateCancelling {
+		stdhttp.Error(w, "result is not final", stdhttp.StatusConflict)
+		return
+	}
+	log, err := os.Open(filepath.Join(a.LogDir, id+".log"))
+	if err != nil {
+		stdhttp.Error(w, "result log is absent", stdhttp.StatusNotFound)
+		return
+	}
+	defer log.Close()
+	output, err := io.ReadAll(io.LimitReader(log, maxResultLog+1))
+	if err != nil {
+		stdhttp.Error(w, "cannot read result log", stdhttp.StatusInternalServerError)
+		return
+	}
+	if len(output) > maxResultLog {
+		stdhttp.Error(w, "result log exceeds the admitted response size", stdhttp.StatusRequestEntityTooLarge)
+		return
+	}
+	digest := sha256.Sum256(output)
+	answerJSON(w, stdhttp.StatusOK, JobResult{Run: run, Output: string(output), OutputDigest: hex.EncodeToString(digest[:])})
+}
+
+func requestDigest(job Job) string {
+	h := sha256.New()
+	io.WriteString(h, job.Action)
+	io.WriteString(h, "\x00")
+	io.WriteString(h, job.ContractVersion)
+	io.WriteString(h, "\x00")
+	io.WriteString(h, job.RuntimeDigest)
+	h.Write(job.Request)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func (a *Agent) statePath() string { return filepath.Join(a.LogDir, "current.json") }
+
+func (a *Agent) restore() error {
+	body, err := os.ReadFile(a.statePath())
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("fleet: read persisted agent state: %w", err)
+	}
+	if err := json.Unmarshal(body, &a.current); err != nil {
+		return fmt.Errorf("fleet: decode persisted agent state: %w", err)
+	}
+	a.reconcileLocked()
+	return nil
+}
+
+func (a *Agent) reconcileLocked() {
+	if a.current.State != StateRunning && a.current.State != StateCancelling {
+		return
+	}
+	if a.proc != nil {
+		return
+	}
+	identity, alive := runningProcessIdentity(a.current.PID, a.current.Executable)
+	if alive && identity.Start == a.current.ProcessStart && identity.Executable == a.current.Executable {
+		return
+	}
+	if a.current.State == StateCancelling {
+		a.current.State = StateCancelled
+	} else {
+		a.current.State = StateUnknown
+	}
+	a.current.Exit = -1
+	_ = a.persistLocked()
+	_ = a.persistRecordLocked(a.current.ID)
+}
+
+func (a *Agent) persistLocked() error {
+	body, err := json.Marshal(a.current)
+	if err != nil {
+		return err
+	}
+	temporary := a.statePath() + ".tmp"
+	if err := os.WriteFile(temporary, body, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(temporary, a.statePath())
+}
+
+func (a *Agent) persistRecordLocked(id string) error {
+	body, err := json.Marshal(a.current)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(a.LogDir, id+".json"), body, 0o600)
 }
 
 func readJob(w stdhttp.ResponseWriter, r *stdhttp.Request) (Job, bool) {
@@ -403,8 +612,23 @@ func (a *Agent) RunToCompletion(ctx context.Context, job Job) Outcome {
 		outcome.Detail = err.Error()
 		return outcome
 	}
-	a.current = NodeRun{ID: job.ID, Action: job.Action, State: StateRunning, Exit: -1}
+	identity, _ := runningProcessIdentity(process.Process.Pid, command.Path)
+	a.current = NodeRun{
+		ID: job.ID, Action: job.Action, State: StateRunning, Exit: -1,
+		Generation: job.Generation, ContractVersion: job.ContractVersion,
+		RuntimeDigest: job.RuntimeDigest, RequestDigest: requestDigest(job),
+		PID: process.Process.Pid, ProcessStart: identity.Start, Executable: identity.Executable,
+		StartedAt: time.Now().UTC(),
+	}
 	a.proc = process
+	if err := a.persistLocked(); err != nil {
+		_ = killGroup(process)
+		_ = process.Wait()
+		log.Close()
+		a.mu.Unlock()
+		outcome.Detail = "cannot persist the process identity"
+		return outcome
+	}
 	a.mu.Unlock()
 
 	// The context cancels the job rather than abandoning it. A loop that returned
@@ -422,17 +646,23 @@ func (a *Agent) RunToCompletion(ctx context.Context, job Job) Outcome {
 	log.Close()
 
 	a.mu.Lock()
+	prior := a.current.State
 	a.current.State, a.current.Exit = StateSucceeded, 0
 	if waitErr != nil {
-		a.current.State = StateFailed
+		if prior == StateCancelling {
+			a.current.State = StateCancelled
+		} else {
+			a.current.State = StateFailed
+		}
 		if process.ProcessState != nil {
 			a.current.Exit = process.ProcessState.ExitCode()
 		}
 		outcome.Detail = waitErr.Error()
 	}
 	outcome.State, outcome.Exit = a.current.State, a.current.Exit
-	record, _ := json.Marshal(a.current)
-	os.WriteFile(filepath.Join(a.LogDir, job.ID+".json"), record, 0o600)
+	a.proc = nil
+	_ = a.persistLocked()
+	_ = a.persistRecordLocked(job.ID)
 	a.mu.Unlock()
 	return outcome
 }

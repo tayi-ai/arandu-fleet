@@ -139,6 +139,10 @@ func (f *fakeWorker) Cancel(_ context.Context, n fleet.Node, job fleet.Job) ([]b
 	return []byte(`{"cancelled":true}`), nil
 }
 
+func (f *fakeWorker) Result(_ context.Context, n fleet.Node, job fleet.Job) ([]byte, error) {
+	return []byte(`{"run":{"id":"` + job.ID + `","state":"succeeded"},"output":"ok"}`), nil
+}
+
 func operator() security.Subject {
 	return security.Subject{ID: "paulo", Tenant: "tayi", Actions: []security.Action{fleet.FleetView, fleet.FleetDispatch}}
 }
@@ -226,8 +230,54 @@ func TestPartialLaunchIsCancelledEverywhereAndFreesTheQueue(t *testing.T) {
 			t.Errorf("node %s was not sent the cancel for %s", id, run.ID)
 		}
 	}
-	if _, busy := cp.InFlight(); busy {
-		t.Fatal("a failed launch left the queue occupied")
+	active, busy := cp.InFlight()
+	if !busy || len(active.Nodes) != 2 {
+		t.Fatalf("a failed launch did not retain the two nodes awaiting terminal confirmation: %+v", active)
+	}
+	if err := cp.ReleaseNodes(fleet.Job{ID: run.ID}, []string{"one", "five"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOneExecutionCanReserveDisjointNodesAcrossPhases(t *testing.T) {
+	fake := newFake()
+	cp, err := fleet.NewControlPlane(tayiDeclared(), inventory(), fake)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := fleet.Job{ID: "inference-59", Action: "mx.rpc", Generation: 3}
+	if _, err := cp.DispatchNodes(context.Background(), operator(), remote, []string{"three", "five"}); err != nil {
+		t.Fatalf("dispatching RPC phase: %v", err)
+	}
+	coordinator := fleet.Job{ID: remote.ID, Action: "mx.generate", Generation: remote.Generation}
+	if _, err := cp.DispatchNodes(context.Background(), operator(), coordinator, []string{"one"}); err != nil {
+		t.Fatalf("dispatching coordinator phase: %v", err)
+	}
+	active, ok := cp.InFlight()
+	if !ok || len(active.Nodes) != 3 {
+		t.Fatalf("the execution did not retain all three nodes: %+v", active)
+	}
+	if _, err := cp.DispatchNodes(context.Background(), operator(), remote, []string{"five"}); !errors.Is(err, fleet.ErrBusy) {
+		t.Fatalf("an overlapping phase was not fenced: %v", err)
+	}
+	if _, err := cp.CancelNodes(context.Background(), operator(), coordinator, []string{"one"}); err != nil {
+		t.Fatalf("cancelling the coordinator: %v", err)
+	}
+	if err := cp.ReleaseNodes(coordinator, []string{"one"}); err != nil {
+		t.Fatalf("releasing the observed coordinator: %v", err)
+	}
+	active, ok = cp.InFlight()
+	if !ok || len(active.Nodes) != 2 {
+		t.Fatalf("cancelling one phase released the wrong nodes: %+v", active)
+	}
+	if _, err := cp.CancelNodes(context.Background(), operator(), remote, []string{"three", "five"}); err != nil {
+		t.Fatalf("cancelling RPC phase: %v", err)
+	}
+	if err := cp.ReleaseNodes(remote, []string{"three", "five"}); err != nil {
+		t.Fatalf("releasing observed RPC nodes: %v", err)
+	}
+	if _, ok := cp.InFlight(); ok {
+		t.Fatal("the execution stayed active after every held node was released")
 	}
 }
 

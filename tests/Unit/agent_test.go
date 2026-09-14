@@ -4,10 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +33,8 @@ func echo(t *testing.T) fleet.Program {
 			return fleet.Command{Path: "/bin/sh", Args: []string{"-c", "sleep 30"}}, nil
 		case "ok":
 			return fleet.Command{Path: "/bin/sh", Args: []string{"-c", "exit 0"}}, nil
+		case "say":
+			return fleet.Command{Path: "/bin/sh", Args: []string{"-c", "printf TAYI_FLASH_OK"}}, nil
 		case "bad":
 			return fleet.Command{Path: "/bin/sh", Args: []string{"-c", "exit 3"}}, nil
 		}
@@ -77,6 +81,7 @@ func TestTheAgentRefusesEveryRouteWithoutTheToken(t *testing.T) {
 	for _, route := range []struct{ method, path string }{
 		{"GET", "/status"},
 		{"POST", "/jobs"},
+		{"GET", "/jobs/r1/result?generation=1"},
 		{"POST", "/cancel"},
 		{"POST", "/artifacts"},
 	} {
@@ -129,6 +134,58 @@ func TestTheNodeHoldsOneRunAtATime(t *testing.T) {
 	settle(t, a, "first")
 }
 
+func TestRepeatingTheSameRunningJobIsIdempotent(t *testing.T) {
+	a, server := agent(t)
+	body := `{"id":"same","action":"sleep","generation":7,"contract_version":"tayi.inference.v1","runtime_digest":"abc"}`
+	if got := call(t, server, "POST", "/jobs", bearerToken, body).StatusCode; got != http.StatusAccepted {
+		t.Fatalf("first submission answered %d", got)
+	}
+	firstPID := a.Current().PID
+	if got := call(t, server, "POST", "/jobs", bearerToken, body).StatusCode; got != http.StatusAccepted {
+		t.Fatalf("idempotent submission answered %d", got)
+	}
+	if secondPID := a.Current().PID; secondPID != firstPID {
+		t.Fatalf("idempotent submission changed pid from %d to %d", firstPID, secondPID)
+	}
+	call(t, server, "POST", "/cancel", bearerToken, body)
+	settle(t, a, "same")
+}
+
+func TestARestartRestoresIdentityAndFencesAnOldCancel(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("restored process identity uses Linux /proc start time and executable identity")
+	}
+	dir := filepath.Join(t.TempDir(), "logs")
+	first, err := fleet.NewAgent(bearerToken, echo(t), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstServer := httptest.NewServer(first.Handler())
+	defer firstServer.Close()
+	body := `{"id":"restored","action":"sleep","generation":9,"contract_version":"tayi.inference.v1"}`
+	if got := call(t, firstServer, "POST", "/jobs", bearerToken, body).StatusCode; got != http.StatusAccepted {
+		t.Fatalf("submission answered %d", got)
+	}
+
+	restored, err := fleet.NewAgent(bearerToken, echo(t), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restoredServer := httptest.NewServer(restored.Handler())
+	defer restoredServer.Close()
+	if run := restored.Current(); run.ID != "restored" || run.State != fleet.StateRunning || run.PID == 0 || run.ProcessStart == "" {
+		t.Fatalf("restored run = %+v", run)
+	}
+	stale := `{"id":"restored","action":"sleep","generation":8}`
+	if got := call(t, restoredServer, "POST", "/cancel", bearerToken, stale).StatusCode; got != http.StatusConflict {
+		t.Fatalf("stale cancel answered %d, want 409", got)
+	}
+	if got := call(t, restoredServer, "POST", "/cancel", bearerToken, body).StatusCode; got != http.StatusAccepted {
+		t.Fatalf("fenced cancel answered %d", got)
+	}
+	settle(t, first, "restored")
+}
+
 func TestAReusedRunIDIsRefusedRatherThanOverwritingItsLog(t *testing.T) {
 	a, server := agent(t)
 	if got := call(t, server, "POST", "/jobs", bearerToken, `{"id":"once","action":"ok"}`).StatusCode; got != http.StatusAccepted {
@@ -160,13 +217,38 @@ func TestHowARunEndedIsRecordedBothInMemoryAndBesideItsLog(t *testing.T) {
 	}
 }
 
+func TestAFinalResultIsFencedAndReturnsThePersistedOutput(t *testing.T) {
+	a, server := agent(t)
+	body := `{"id":"answer","action":"say","generation":4}`
+	call(t, server, "POST", "/jobs", bearerToken, body)
+	settle(t, a, "answer")
+	if got := call(t, server, "GET", "/jobs/answer/result?generation=3", bearerToken, "").StatusCode; got != http.StatusNotFound {
+		t.Fatalf("stale generation read answered %d", got)
+	}
+	response := call(t, server, "GET", "/jobs/answer/result?generation=4", bearerToken, "")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("result answered %d", response.StatusCode)
+	}
+	encoded, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result fleet.JobResult
+	if err := json.Unmarshal(encoded, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Output != "TAYI_FLASH_OK" || result.OutputDigest == "" {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
 // settle waits for the reaper, which runs in its own goroutine, and returns what
 // the node ended up reporting.
 func settle(t *testing.T, a *fleet.Agent, id string) fleet.NodeRun {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		if run := a.Current(); run.ID == id && run.State != fleet.StateRunning {
+		if run := a.Current(); run.ID == id && run.State != fleet.StateRunning && run.State != fleet.StateCancelling {
 			return run
 		}
 		time.Sleep(5 * time.Millisecond)

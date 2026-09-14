@@ -16,3 +16,15 @@ func detach(c *exec.Cmd) {}
 func killGroup(c *exec.Cmd) error {
 	return errors.New("fleet: cancelling a run needs process groups, which this platform does not provide; run the agent on a unix host")
 }
+
+func terminateGroup(c *exec.Cmd) error {
+	return errors.New("fleet: cancelling a run needs process groups, which this platform does not provide; run the agent on a unix host")
+}
+
+func terminateProcessGroup(int) error {
+	return errors.New("fleet: cancelling a restored run needs process groups, which this platform does not provide; run the agent on a unix host")
+}
+
+func killProcessGroup(int) error {
+	return errors.New("fleet: forcing a restored run to stop needs process groups, which this platform does not provide; run the agent on a unix host")
+}
