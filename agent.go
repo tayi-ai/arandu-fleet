@@ -104,6 +104,8 @@ type NodeRun struct {
 	Generation      uint64    `json:"generation,omitempty"`
 	ContractVersion string    `json:"contract_version,omitempty"`
 	RuntimeDigest   string    `json:"runtime_digest,omitempty"`
+	ModelRecipe     string    `json:"model_recipe,omitempty"`
+	ModelDigest     string    `json:"model_digest,omitempty"`
 	RequestDigest   string    `json:"request_digest,omitempty"`
 	PID             int       `json:"pid,omitempty"`
 	ProcessStart    string    `json:"process_start,omitempty"`
@@ -233,8 +235,9 @@ func (a *Agent) submit(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	a.current = NodeRun{
 		ID: job.ID, Action: job.Action, State: StateRunning, Exit: -1,
 		Generation: job.Generation, ContractVersion: job.ContractVersion,
-		RuntimeDigest: job.RuntimeDigest, RequestDigest: fingerprint,
-		PID: process.Process.Pid, ProcessStart: identity.Start, Executable: identity.Executable,
+		RuntimeDigest: job.RuntimeDigest, ModelRecipe: job.ModelRecipe, ModelDigest: job.ModelDigest,
+		RequestDigest: fingerprint,
+		PID:           process.Process.Pid, ProcessStart: identity.Start, Executable: identity.Executable,
 		StartedAt: time.Now().UTC(),
 	}
 	a.proc = process
@@ -389,6 +392,11 @@ func requestDigest(job Job) string {
 	io.WriteString(h, job.ContractVersion)
 	io.WriteString(h, "\x00")
 	io.WriteString(h, job.RuntimeDigest)
+	io.WriteString(h, "\x00")
+	io.WriteString(h, job.ModelRecipe)
+	io.WriteString(h, "\x00")
+	io.WriteString(h, job.ModelDigest)
+	io.WriteString(h, "\x00")
 	h.Write(job.Request)
 	return hex.EncodeToString(h.Sum(nil))
 }

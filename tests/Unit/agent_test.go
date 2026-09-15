@@ -136,11 +136,15 @@ func TestTheNodeHoldsOneRunAtATime(t *testing.T) {
 
 func TestRepeatingTheSameRunningJobIsIdempotent(t *testing.T) {
 	a, server := agent(t)
-	body := `{"id":"same","action":"sleep","generation":7,"contract_version":"tayi.inference.v1","runtime_digest":"abc"}`
+	body := `{"id":"same","action":"sleep","generation":7,"contract_version":"tayi.inference.v1","runtime_digest":"abc","model_recipe":"deepseek-v4.1-flash-q2_k","model_digest":"def"}`
 	if got := call(t, server, "POST", "/jobs", bearerToken, body).StatusCode; got != http.StatusAccepted {
 		t.Fatalf("first submission answered %d", got)
 	}
-	firstPID := a.Current().PID
+	run := a.Current()
+	firstPID := run.PID
+	if run.ModelRecipe != "deepseek-v4.1-flash-q2_k" || run.ModelDigest != "def" {
+		t.Fatalf("model identity was not persisted: %+v", run)
+	}
 	if got := call(t, server, "POST", "/jobs", bearerToken, body).StatusCode; got != http.StatusAccepted {
 		t.Fatalf("idempotent submission answered %d", got)
 	}
@@ -149,6 +153,20 @@ func TestRepeatingTheSameRunningJobIsIdempotent(t *testing.T) {
 	}
 	call(t, server, "POST", "/cancel", bearerToken, body)
 	settle(t, a, "same")
+}
+
+func TestChangingModelIdentityIsNotAnIdempotentReplay(t *testing.T) {
+	a, server := agent(t)
+	body := `{"id":"model-fence","action":"sleep","generation":7,"contract_version":"tayi.mx.v1","runtime_digest":"runtime","model_recipe":"deepseek-v4.1-flash-q2_k","model_digest":"q2"}`
+	if got := call(t, server, "POST", "/jobs", bearerToken, body).StatusCode; got != http.StatusAccepted {
+		t.Fatalf("first submission answered %d", got)
+	}
+	drift := `{"id":"model-fence","action":"sleep","generation":7,"contract_version":"tayi.mx.v1","runtime_digest":"runtime","model_recipe":"deepseek-v4.1-flash-q2_k","model_digest":"different"}`
+	if got := call(t, server, "POST", "/jobs", bearerToken, drift).StatusCode; got != http.StatusConflict {
+		t.Fatalf("changed model identity answered %d, want 409", got)
+	}
+	call(t, server, "POST", "/cancel", bearerToken, body)
+	settle(t, a, "model-fence")
 }
 
 func TestARestartRestoresIdentityAndFencesAnOldCancel(t *testing.T) {

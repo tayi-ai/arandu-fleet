@@ -39,6 +39,10 @@ type Job struct {
 	ContractVersion string `json:"contract_version,omitempty"`
 	// RuntimeDigest identifies the admitted native release for this job.
 	RuntimeDigest string `json:"runtime_digest,omitempty"`
+	// ModelRecipe identifies the pinned model representation selected by the application.
+	ModelRecipe string `json:"model_recipe,omitempty"`
+	// ModelDigest fences that recipe to the exact admitted model manifest.
+	ModelDigest string `json:"model_digest,omitempty"`
 	// Request stays raw because its shape belongs to the installation's Program.
 	// A module that parsed it would have to know every action anybody ever adds,
 	// and the vocabulary is exactly what this module refuses to own.
