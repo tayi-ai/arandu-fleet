@@ -38,7 +38,9 @@ jobs:
           test -z "$unformatted" || { echo "$unformatted"; exit 1; }
           GOWORK=off go build ./...
           GOWORK=off go vet ./...
-          GOWORK=off go vet configure.go
+          if [ -f configure.go ]; then
+            GOWORK=off go vet configure.go
+          fi
           GOWORK=off go test -race -count=1 ./...
 
       - name: Audit known vulnerabilities

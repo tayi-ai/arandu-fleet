@@ -10,6 +10,23 @@ a release is corrected by another release and never by moving a tag.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-15
+
+### Added
+
+- `Job` and persisted `NodeRun` identity now carry `model_recipe` and
+  `model_digest`, so a retry cannot silently reuse a process launched for a
+  different admitted model representation.
+
+### Changed
+
+- Agent reconciliation fences current processes by model identity in addition
+  to execution, generation, action, contract, and runtime identity.
+
+### Fixed
+
+- Release verification no longer assumes a package-local `configure.go` exists.
+
 ## [0.2.0] - 2026-09-13
 
 ### Added
@@ -36,5 +53,6 @@ a release is corrected by another release and never by moving a tag.
 - Result logs are limited to 8 MiB at the agent and to a bounded escaped JSON
   response at the HTTP client.
 
-[Unreleased]: https://github.com/tayi-ai/arandu-fleet/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/tayi-ai/arandu-fleet/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/tayi-ai/arandu-fleet/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/tayi-ai/arandu-fleet/compare/v0.1.2...v0.2.0

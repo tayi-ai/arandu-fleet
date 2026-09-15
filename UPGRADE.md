@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v0.3.0
+
+`Job` and persisted `NodeRun` now also carry `ModelRecipe` and `ModelDigest`.
+Callers using keyed literals may omit them only for actions that do not select a
+model. Inference jobs should set both values from the admitted recipe. A retry
+with a different model identity is rejected instead of adopting the prior
+process.
+
 ## v0.2.0
 
 `Job`, `NodeRun` and `Run` gained fields that fence a process by generation and
